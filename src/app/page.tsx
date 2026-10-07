@@ -28,7 +28,7 @@ export default async function Home({ searchParams }: { searchParams: PageSearch 
       <Flash searchParams={sp} />
       <h1>Proof of what you actually built.</h1>
       <p className="muted" style={{ maxWidth: 680 }}>
-        buidl is a Solana-first identity network for hackathon builders. Your GitHub identity and a wallet you sign
+        forge is a Solana-first identity network for hackathon builders. Your GitHub identity and a wallet you sign
         for are linked; each teammate documents their own contribution with evidence; an event reviewer approves it;
         and the approval is issued as a Solana Attestation Service proof that anyone can verify, with no trust in us
         required.

@@ -25,7 +25,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ attesta
       {result && (
         <>
           <div className={`flash ${result.valid ? "ok" : "error"}`}>
-            {result.valid ? "Valid: genuine buidl proof onchain (chain-only check)" : "Not a valid buidl proof"}
+            {result.valid ? "Valid: genuine forge proof onchain (chain-only check)" : "Not a valid forge proof"}
           </div>
           <ChecksTable checks={result.checks} />
           {result.onchain && (

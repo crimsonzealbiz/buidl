@@ -5,7 +5,7 @@ import { getSession } from "@/server/session";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "buidl — proof of contribution for hackathon builders",
+  title: "forge — proof of contribution for hackathon builders",
   description: "Reviewed, evidence-backed contribution proofs issued as Solana attestations.",
 };
 
@@ -15,7 +15,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     <html lang="en">
       <body>
         <header className="nav">
-          <Link className="brand" href="/">buidl</Link>
+          <Link className="brand" href="/">forge</Link>
           <nav>
             <Link href="/events">Events</Link>
             <Link href="/opportunities">Opportunities</Link>
