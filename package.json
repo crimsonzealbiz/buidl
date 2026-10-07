@@ -1,0 +1,46 @@
+{
+  "name": "buidl",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Solana-first identity network for hackathon builders: reviewed, evidence-backed contribution proofs issued as Solana Attestation Service attestations.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "sas:setup": "tsx scripts/sas-setup.ts",
+    "verify": "tsx scripts/verify-proof.ts",
+    "localnet": "bash scripts/localnet.sh"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@solana/attestation": "^2.1.0",
+    "@solana/kit": "^8.4.0",
+    "@wallet-standard/app": "^1.1.1",
+    "drizzle-orm": "^0.45.3",
+    "next": "^16.4.0",
+    "pg": "^8.23.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@solana-program/system": "^0.15.0",
+    "@types/node": "^26.6.4",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "drizzle-kit": "^0.31.11",
+    "litesvm": "^1.5.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}
