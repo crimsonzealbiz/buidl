@@ -12,6 +12,7 @@ import {
   submitContribution,
 } from "@/lib/domain/submissions";
 import { reviewContribution } from "@/lib/domain/reviews";
+import { createSampleEvent } from "@/lib/domain/demo";
 import { getProof, issueProof, revokeProof } from "@/lib/proof/service";
 import { loadIssuer } from "@/lib/proof/runtime";
 import { AppError } from "@/lib/errors";
@@ -72,6 +73,19 @@ export async function revokeProofAction(form: FormData) {
     });
     return "Proof revoked onchain";
   });
+}
+
+export async function createSampleEventAction() {
+  const { ctx, user } = await ctxAndUser();
+  let slug = "";
+  try {
+    slug = (await createSampleEvent(ctx, user)).event.slug;
+  } catch (e) {
+    return act("/events", async () => {
+      throw e;
+    });
+  }
+  return act(`/events/${slug}`, async () => "Sample event and demo-day opportunity created");
 }
 
 export async function createEventAction(form: FormData) {
@@ -196,8 +210,9 @@ export async function confirmAction(form: FormData) {
   const { ctx, user } = await ctxAndUser();
   const id = str(form, "contributionId");
   return act(`/contributions/${id}`, async () => {
-    await confirmContribution(ctx, user, id, str(form, "statement"));
-    return "Confirmation recorded";
+    const stance = str(form, "stance") === "dispute" ? "dispute" : "confirm";
+    await confirmContribution(ctx, user, id, str(form, "statement"), stance);
+    return stance === "dispute" ? "Dispute recorded; reviewers will see it" : "Confirmation recorded";
   });
 }
 

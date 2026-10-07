@@ -69,8 +69,15 @@ export default async function ReviewPage({ params, searchParams }: Props) {
           </ul>
           {confirmations.length > 0 && (
             <>
-              <h3>Teammate confirmations</h3>
-              <ul>{confirmations.map((x) => <li key={x.user.id}>@{x.user.githubLogin}: {x.statement}</li>)}</ul>
+              <h3>Teammate input</h3>
+              <ul>
+                {confirmations.map((x) => (
+                  <li key={x.user.id}>
+                    <span className={`badge ${x.stance === "dispute" ? "bad" : "ok"}`}>{x.stance === "dispute" ? "disputes" : "confirms"}</span>{" "}
+                    @{x.user.githubLogin}: {x.statement}
+                  </li>
+                ))}
+              </ul>
             </>
           )}
           <form action={reviewAction} className="stack">

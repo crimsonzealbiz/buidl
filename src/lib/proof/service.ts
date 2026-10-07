@@ -23,7 +23,7 @@ import { activeWallet } from "../wallet/link";
 import { assertSafeCluster, TransactionFailedError, type Ledger } from "../solana/ledger";
 import { buildProofBundle, onchainDataFromBundle, type ProofBundle } from "./bundle";
 import { toHex, bundleHash } from "./canonical";
-import { issuerAddresses, type IssuerConfig } from "./issuer";
+import { issuerAddresses, issuerHealth, type IssuerConfig } from "./issuer";
 import { proofNonce } from "./sas-schema";
 import { verifyProof } from "./verify";
 import type { Proof } from "./types";
@@ -59,6 +59,9 @@ export async function issueProof(ctx: Ctx, issuer: Issuer, actor: User, contribu
 
   await assertSafeCluster(issuer.ledger);
   const addrs = await issuerAddresses(issuer.signer.address, issuer.config);
+  // Fail fast, before recording anything, if the issuer cannot pay or is not set up.
+  const health = await issuerHealth(issuer.ledger, issuer.signer.address, issuer.config);
+  assert(health.problems.length === 0, "not_configured", health.problems.join("; "));
 
   let proof: Proof;
   if (!existing) {

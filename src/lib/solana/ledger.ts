@@ -31,6 +31,8 @@ export interface Ledger {
     onSigned?: (signature: string) => Promise<void>,
   ): Promise<string>;
   genesisHash(): Promise<string>;
+  /** Balance in lamports. */
+  balance(address: Address): Promise<bigint>;
 }
 
 export class TransactionFailedError extends Error {
@@ -78,6 +80,10 @@ export class RpcLedger implements Ledger {
 
   async genesisHash() {
     return this.rpc.getGenesisHash().send();
+  }
+
+  async balance(address: Address) {
+    return (await this.rpc.getBalance(address, { commitment: "confirmed" }).send()).value;
   }
 
   async send(feePayer: TransactionSigner, instructions: Instruction[], onSigned?: (sig: string) => Promise<void>) {

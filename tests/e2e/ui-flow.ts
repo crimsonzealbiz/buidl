@@ -216,10 +216,10 @@ async function main() {
     await alice.page.fill('textarea[name="description"]', "Built the issuance pipeline and the independent verifier for proofs.");
     await submit(alice.page, 'button:has-text("Save and add evidence")');
     await expectFlash(alice.page, "ok", /Contribution saved/);
-    await alice.page.selectOption('select[name="kind"]', "commit");
-    await alice.page.fill('input[name="url"]', `https://github.com/team-x/proofs-app/commit/${aliceSha}`);
-    await alice.page.fill('textarea[name="description"]', "Issuer service and verifier");
-    await submit(alice.page, 'button:has-text("Add evidence")');
+    // Pick the commit from "Your commits since the baseline".
+    const pick = alice.page.locator("form", { hasText: aliceSha.slice(0, 7) });
+    await pick.locator('input[name="description"]').fill("Issuer service and verifier");
+    await submit(pick, 'button:has-text("Add")', alice.page);
     await expectFlash(alice.page, "ok", /authorship verified/);
     await submit(alice.page, 'button:has-text("Submit for review")');
     await expectFlash(alice.page, "ok", /Submitted for review/);
@@ -244,7 +244,8 @@ async function main() {
     // Alice corroborates Bob.
     await alice.page.goto(bobContribUrl);
     await alice.page.fill('textarea[name="statement"]', "Bob designed every screen we shipped.");
-    await submit(alice.page, 'button:has-text("Confirm")');
+    await alice.page.check('input[name="stance"][value="confirm"]');
+    await submit(alice.page.locator("form", { hasText: "Your statement" }), 'button:has-text("Submit")', alice.page);
     await expectFlash(alice.page, "ok", /Confirmation recorded/);
 
     // Reviewer approves Alice (with stats) and rejects nothing; approves Bob.

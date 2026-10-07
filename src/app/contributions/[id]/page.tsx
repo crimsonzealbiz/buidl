@@ -5,7 +5,7 @@ import { EVIDENCE_KINDS, users } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 import { getEvent, hasStaffRole } from "@/lib/domain/events";
 import { getTeam, isTeamMember } from "@/lib/domain/teams";
-import { getContribution, getSubmission, listConfirmations, listEvidence } from "@/lib/domain/submissions";
+import { getContribution, getSubmission, listConfirmations, listEvidence, suggestCommits, type CommitSuggestion } from "@/lib/domain/submissions";
 import { reviewHistory } from "@/lib/domain/reviews";
 import { proofForContribution } from "@/lib/proof/service";
 import { activeWallet } from "@/lib/wallet/link";
@@ -49,6 +49,15 @@ export default async function ContributionPage({ params, searchParams }: Props) 
   const editable = isOwner && (c.status === "draft" || c.status === "changes_requested");
   const ownerWallet = await activeWallet(db, c.userId);
   const hidden = (name: string, value: string) => <input type="hidden" name={name} value={value} />;
+  let suggestions: CommitSuggestion[] | null = null;
+  let suggestionsError: string | null = null;
+  if (editable && user) {
+    try {
+      suggestions = await suggestCommits(await makeCtx(session), user, c.id);
+    } catch (e) {
+      suggestionsError = (e as Error).message;
+    }
+  }
 
   return (
     <>
@@ -83,6 +92,21 @@ export default async function ContributionPage({ params, searchParams }: Props) 
       ))}
       {editable && (
         <>
+          {suggestions && suggestions.length > 0 && (
+            <div className="card">
+              <h3 style={{ marginTop: 0 }}>Your commits since the baseline</h3>
+              <p className="muted">Pick the ones that show your work. Each is verified against GitHub when added.</p>
+              {suggestions.map((sg) => (
+                <form key={sg.sha} action={addEvidenceAction} className="row" style={{ marginBottom: 6 }}>
+                  {hidden("contributionId", c.id)}{hidden("kind", "commit")}{hidden("url", sg.url)}
+                  <span className="mono">{sg.sha.slice(0, 7)}</span>
+                  <input name="description" defaultValue={sg.message.length >= 10 ? sg.message : `Commit ${sg.sha.slice(0, 7)}: ${sg.message}`} style={{ flex: 1, minWidth: 180 }} />
+                  <button type="submit" className="secondary" disabled={sg.alreadyAdded}>{sg.alreadyAdded ? "Added" : "Add"}</button>
+                </form>
+              ))}
+            </div>
+          )}
+          {suggestionsError && <p className="muted">Couldn&apos;t load your commits from GitHub: {suggestionsError}</p>}
           <form action={addEvidenceAction} className="stack card">
             <h3 style={{ margin: 0 }}>Add evidence</h3>
             {hidden("contributionId", c.id)}
@@ -108,18 +132,24 @@ export default async function ContributionPage({ params, searchParams }: Props) 
         </>
       )}
 
-      <h2>Teammate confirmations</h2>
+      <h2>Teammate input</h2>
       {confirmations.length === 0 && <p className="muted">None.</p>}
       {confirmations.map((x) => (
         <div key={x.user.id} className="card">
+          <span className={`badge ${x.stance === "dispute" ? "bad" : "ok"}`}>{x.stance === "dispute" ? "disputes" : "confirms"}</span>{" "}
           <strong>@{x.user.githubLogin}</strong>: {x.statement}
         </div>
       ))}
-      {isTeammate && (
+      {isTeammate && (c.status === "draft" || c.status === "submitted" || c.status === "changes_requested") && (
         <form action={confirmAction} className="stack card">
           {hidden("contributionId", c.id)}
-          <label>Corroborate what @{owner.githubLogin} did<textarea name="statement" required /></label>
-          <button type="submit">Confirm</button>
+          <p className="muted" style={{ margin: 0 }}>
+            Does this claim match what @{owner.githubLogin} actually did? Reviewers see your answer.
+          </p>
+          <label className="check"><input type="radio" name="stance" value="confirm" defaultChecked /> Confirm: this is accurate</label>
+          <label className="check"><input type="radio" name="stance" value="dispute" /> Dispute: this overstates or misattributes the work</label>
+          <label>Your statement<textarea name="statement" required minLength={10} /></label>
+          <button type="submit">Submit</button>
         </form>
       )}
 

@@ -260,22 +260,39 @@ export async function submitContribution(ctx: Ctx, actor: User, contributionId: 
   return row;
 }
 
-/** A teammate corroborates someone else's claim. Self-confirmation is not allowed. */
-export async function confirmContribution(ctx: Ctx, actor: User, contributionId: string, statement: string) {
-  const text = z.string().trim().min(10).max(1000).parse(statement);
+/**
+ * A teammate corroborates, or disputes, someone else's claim while it is still
+ * open. Disputes are shown to reviewers; self-confirmation is not allowed.
+ */
+export async function confirmContribution(
+  ctx: Ctx,
+  actor: User,
+  contributionId: string,
+  statement: string,
+  stance: "confirm" | "dispute" = "confirm",
+) {
+  const text = z.string().trim().min(10, "Write at least 10 characters").max(1000).parse(statement);
   const c = await getContribution(ctx.db, contributionId);
   assert(c.userId !== actor.id, "forbidden", "You cannot confirm your own contribution");
   const submission = await getSubmission(ctx.db, c.submissionId);
   assert(await isTeamMember(ctx.db, submission.teamId, actor.id), "forbidden", "Only teammates can confirm a contribution");
+  assert(
+    c.status === "draft" || c.status === "submitted" || c.status === "changes_requested",
+    "precondition_failed",
+    "This contribution has already been decided",
+  );
   await ctx.db
     .insert(confirmations)
-    .values({ contributionId, userId: actor.id, statement: text })
-    .onConflictDoUpdate({ target: [confirmations.contributionId, confirmations.userId], set: { statement: text } });
+    .values({ contributionId, userId: actor.id, statement: text, stance })
+    .onConflictDoUpdate({
+      target: [confirmations.contributionId, confirmations.userId],
+      set: { statement: text, stance },
+    });
 }
 
 export function listConfirmations(db: Db, contributionId: string) {
   return db
-    .select({ statement: confirmations.statement, createdAt: confirmations.createdAt, user: users })
+    .select({ statement: confirmations.statement, stance: confirmations.stance, createdAt: confirmations.createdAt, user: users })
     .from(confirmations)
     .innerJoin(users, eq(users.id, confirmations.userId))
     .where(eq(confirmations.contributionId, contributionId));
@@ -296,4 +313,33 @@ export function contributionsForUser(db: Db, userId: string) {
     .innerJoin(submissions, eq(submissions.id, contributions.submissionId))
     .innerJoin(teams, eq(teams.id, submissions.teamId))
     .where(eq(contributions.userId, userId));
+}
+
+export type CommitSuggestion = { sha: string; url: string; message: string; date: string | null; alreadyAdded: boolean };
+
+/**
+ * The builder's own commits in the team repository since the baseline, to
+ * pick as evidence. Picking one still runs the full verification in addEvidence.
+ */
+export async function suggestCommits(ctx: Ctx, actor: User, contributionId: string): Promise<CommitSuggestion[]> {
+  const c = await getContribution(ctx.db, contributionId);
+  assert(c.userId === actor.id, "forbidden", "You can only see suggestions for your own contribution");
+  const submission = await getSubmission(ctx.db, c.submissionId);
+  const repo = await teamRepository(ctx.db, submission.teamId);
+  if (!repo) return [];
+  const commits = await ctx.github.listCommits(repo.owner, repo.name, repo.defaultBranch, actor.githubLogin);
+  const added = new Set((await listEvidence(ctx.db, c.id)).map((e) => e.ref));
+  const out: CommitSuggestion[] = [];
+  for (const cm of commits) {
+    if (cm.sha === repo.baselineSha) break; // older commits predate registration
+    if (cm.author?.id !== actor.githubId) continue;
+    out.push({
+      sha: cm.sha,
+      url: `https://github.com/${repo.owner}/${repo.name}/commit/${cm.sha}`,
+      message: cm.commit.message.split("\n")[0].slice(0, 200),
+      date: cm.commit.author?.date ?? null,
+      alreadyAdded: added.has(cm.sha),
+    });
+  }
+  return out;
 }

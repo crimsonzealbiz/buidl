@@ -1,6 +1,6 @@
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { CONTRIBUTION_CATEGORIES, applications, opportunities, type OpportunityCriteria } from "@/db/schema";
+import { CONTRIBUTION_CATEGORIES, applications, opportunities, users, type OpportunityCriteria } from "@/db/schema";
 import type { Db } from "@/db";
 import { AppError, assert } from "../errors";
 import { newId } from "../ids";
@@ -150,5 +150,10 @@ export async function applyToOpportunity(
 }
 
 export function listApplications(db: Db, opportunityId: string) {
-  return db.query.applications.findMany({ where: eq(applications.opportunityId, opportunityId) });
+  return db
+    .select({ application: applications, user: users })
+    .from(applications)
+    .innerJoin(users, eq(users.id, applications.userId))
+    .where(eq(applications.opportunityId, opportunityId))
+    .orderBy(desc(applications.createdAt));
 }

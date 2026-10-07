@@ -15,6 +15,13 @@
       "when": 1791375094755,
       "tag": "0001_event_settings_revocation",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791375547000,
+      "tag": "0002_teammate_disputes",
+      "breakpoints": true
     }
   ]
 }

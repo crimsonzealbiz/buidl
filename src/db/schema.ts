@@ -238,12 +238,13 @@ export const evidence = pgTable("evidence", {
   createdAt: createdAt(),
 });
 
-/** A teammate's corroboration of someone else's contribution claim. */
+/** A teammate's corroboration of, or objection to, someone else's contribution claim. */
 export const confirmations = pgTable(
   "confirmations",
   {
     contributionId: text("contribution_id").notNull().references(() => contributions.id, { onDelete: "cascade" }),
     userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    stance: text("stance", { enum: ["confirm", "dispute"] }).notNull().default("confirm"),
     statement: text("statement").notNull(),
     createdAt: createdAt(),
   },

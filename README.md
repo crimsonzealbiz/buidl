@@ -61,4 +61,4 @@ LOCALNET_RPC_URL=http://127.0.0.1:8899 npm test  # also run the core flow over J
 npm run e2e                                      # browser flow (requires `npm run localnet` running)
 ```
 
-See [docs/progress.md](docs/progress.md) for status, results and known gaps.
+See [docs/demo.md](docs/demo.md) for a live demo runbook and [docs/progress.md](docs/progress.md) for status, results and known gaps.

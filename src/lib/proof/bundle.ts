@@ -48,7 +48,7 @@ export type ProofBundle = {
   };
   contribution: { id: string; category: string; title: string; description: string; submittedAt: string | null };
   evidence: { kind: string; url: string; description: string; ref: string | null; platformCheck: string }[];
-  confirmations: { githubId: number; githubLogin: string; statement: string }[];
+  confirmations: { githubId: number; githubLogin: string; stance: string; statement: string }[];
   review: {
     decision: string;
     rationale: string;
@@ -77,7 +77,7 @@ export async function buildProofBundle(
   const statInputs: StatInputs = {
     evidenceKinds: ev.map((e) => e.kind),
     authorVerifiedEvidence: ev.filter((e) => e.verification === "github_author_verified").length,
-    teammateConfirmations: confs.length,
+    teammateConfirmations: confs.filter((x) => x.stance === "confirm").length,
     teamSize: members.length,
     demoUrl: submission.demoUrl,
   };
@@ -149,7 +149,7 @@ export async function buildProofBundle(
       platformCheck: e.verification,
     })),
     confirmations: confs
-      .map((x) => ({ githubId: x.user.githubId, githubLogin: x.user.githubLogin, statement: x.statement }))
+      .map((x) => ({ githubId: x.user.githubId, githubLogin: x.user.githubLogin, stance: x.stance, statement: x.statement }))
       .sort((a, b) => a.githubId - b.githubId),
     review: {
       decision: opts.review.decision,

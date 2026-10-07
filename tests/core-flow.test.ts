@@ -236,6 +236,20 @@ describe.each(testLedgerKinds())("core flow on %s: GitHub identity â†’ wallet â†
     await expect(confirmContribution(ctx, u.bob, contrib.bob, "I did great work, trust me.")).rejects.toThrow(/own/);
     await expect(confirmContribution(ctx, u.rex, contrib.bob, "Looks right to me, I guess.")).rejects.toThrow(/teammates/);
 
+    // A teammate can dispute a claim; it is recorded for reviewers and not counted as a confirmation.
+    await confirmContribution(ctx, u.carl, contrib.dana, "Dana did not work on the product itself.", "dispute");
+    const { listConfirmations, suggestCommits } = await import("@/lib/domain/submissions");
+    expect((await listConfirmations(db, contrib.dana))[0].stance).toBe("dispute");
+
+    // Commit picker: only Alice's own commits after the baseline.
+    const sugg = await suggestCommits(ctx, u.alice, contrib.alice);
+    const shas = sugg.map((x) => x.sha);
+    expect(shas).toContain(aliceSha);
+    expect(shas).not.toContain(preexistingSha);
+    expect(shas).not.toContain(carlSha);
+    expect(sugg.find((x) => x.sha === aliceSha)?.alreadyAdded).toBe(true);
+    await expect(suggestCommits(ctx, u.bob, contrib.alice)).rejects.toThrow(/own contribution/);
+
     for (const n of ["alice", "bob", "dana"]) await submitContribution(ctx, u[n], contrib[n]);
     await expect(
       addEvidence(ctx, u.alice, contrib.alice, { kind: "link", url: "https://a.example", description: "after submit" }),
@@ -244,6 +258,9 @@ describe.each(testLedgerKinds())("core flow on %s: GitHub identity â†’ wallet â†
 
   it("reviewers decide per contribution; conflicts of interest are refused", async () => {
     await expect(reviewQueue(ctx, u.alice, eventId)).rejects.toThrow(/not a reviewer/);
+    const { nextSteps } = await import("@/lib/domain/next-steps");
+    expect((await nextSteps(db, u.rex)).staff[0].detail).toBe("3 awaiting review");
+    expect((await nextSteps(db, u.alice)).builder.map((x) => x.label)).toContain('"Attestation pipeline" is waiting for a reviewer');
     const queue = await reviewQueue(ctx, u.rex, eventId);
     expect(queue.map((q) => q.user.githubLogin).sort()).toEqual(["alice", "bob", "dana"]);
 
@@ -286,6 +303,20 @@ describe.each(testLedgerKinds())("core flow on %s: GitHub identity â†’ wallet â†
     await expect(issueProof(ctx, issuer, u.dana, contrib.dana)).rejects.toThrow(/approved/);
     await expect(issueProof(ctx, issuer, u.dana, contrib.alice)).rejects.toThrow(/contributor or event staff/);
     await expect(issueProof(ctx, issuer, u.alice, contrib.alice)).rejects.toThrow(/link a Solana wallet/);
+    const { nextSteps } = await import("@/lib/domain/next-steps");
+    expect((await nextSteps(db, u.alice)).builder[0]).toMatchObject({ href: "/wallet" });
+    // Disputes cannot be added after a decision.
+    await expect(confirmContribution(ctx, u.carl, contrib.alice, "Too late to weigh in here.", "dispute")).rejects.toThrow(/decided/);
+  });
+
+  it("refuses to issue from an unfunded or unset-up issuer, before recording anything", async () => {
+    const broke = { ...issuer, signer: await generateKeyPairSigner() };
+    const w = await testWallet();
+    const ch = await createLinkChallenge(db, u.alice, w.address, "buidl.test");
+    await completeLink(db, u.alice, ch.nonce, await w.sign(ch.message));
+    await expect(issueProof(ctx, broke, u.alice, contrib.alice)).rejects.toThrow(/fund it.*sas:setup/s);
+    const { proofForContribution } = await import("@/lib/proof/service");
+    expect(await proofForContribution(db, contrib.alice)).toBeNull();
   });
 
   let aliceAttestation: string;
@@ -390,6 +421,8 @@ describe.each(testLedgerKinds())("core flow on %s: GitHub identity â†’ wallet â†
     await expect(applyToOpportunity(ctx, ledger, trust, u.alice, opp.id, "")).rejects.toThrow(/Needs 1/);
     const app = await applyToOpportunity(ctx, ledger, trust, u.bob, opp.id, "Excited to demo!");
     expect(app.verifiedAttestations).toEqual(bob.qualifying.map((q) => q.attestation));
+    const { listApplications } = await import("@/lib/domain/opportunities");
+    expect((await listApplications(db, opp.id)).map((a) => a.user.githubLogin)).toEqual(["bob"]);
 
     // If the attestation disappears onchain, eligibility is lost even though the DB still says confirmed.
     const ledger2 = new LiteSvmLedger(); // a cluster without the proofs
@@ -413,6 +446,16 @@ describe.each(testLedgerKinds())("core flow on %s: GitHub identity â†’ wallet â†
     const { listOpportunities } = await import("@/lib/domain/opportunities");
     const opp = (await listOpportunities(db))[0];
     expect((await checkEligibility(ctx, ledger, trust, u.bob, opp)).eligible).toBe(false);
+  });
+
+  it("admins can create a ready-made sample event for demos", async () => {
+    const { createSampleEvent } = await import("@/lib/domain/demo");
+    await expect(createSampleEvent(ctx, u.alice)).rejects.toThrow(/admins/);
+    const { event, opportunity } = await createSampleEvent(ctx, u.olivia);
+    expect(event.slug).toMatch(/^demo-[a-z0-9]{4}$/);
+    expect(event.submissionDeadline.getTime()).toBeGreaterThan(Date.now());
+    expect(event.prizes.length).toBeGreaterThan(0);
+    expect(opportunity.criteria.eventId).toBe(event.id);
   });
 
   it("refuses to issue on mainnet", async () => {

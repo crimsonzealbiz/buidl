@@ -1,0 +1,1 @@
+ALTER TABLE "confirmations" ADD COLUMN "stance" text DEFAULT 'confirm' NOT NULL;

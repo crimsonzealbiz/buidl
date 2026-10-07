@@ -21,6 +21,7 @@ and acceptance criteria need to be reconciled with this work.
 | 5 | SAS proof issuance, independent verification, evidence export | Done on LiteSVM + local validator; **devnet not exercised** |
 | 6 | Proof-based opportunity eligibility, UI for the full flow | Done |
 | 7 | Product decisions round 1: event settings, leaving teams, proof revocation, token encryption | Done |
+| 8 | Demo/MVP readiness | Done: next-steps guidance, commit picker, teammate disputes, issuer readiness check, applicant list, sample event, admin-only config, demo runbook (`docs/demo.md`) |
 | — | X/Ethos, token badges, community features, AI | Deferred by design |
 
 ## Product decisions (from review of the first build)
@@ -83,7 +84,17 @@ and acceptance criteria need to be reconciled with this work.
 
 - `npm run typecheck`: clean.
 - `npx next build`: succeeds (22 routes).
-Latest run (after the product-decision round):
+Latest run (after the demo-readiness round):
+- `npm test` on LiteSVM: **30/30**. With `LOCALNET_RPC_URL`, **43/43**. New
+  coverage: teammate disputes (recorded, not counted as confirmations, refused
+  after a decision), commit suggestions (own commits after the baseline only),
+  next-steps guidance for builders and reviewers, issuer pre-check
+  (unfunded or unset-up issuer fails before any proof record is created),
+  applicant names on opportunities, sample event creation (admin only).
+- `npm run e2e`: **PASS**. Evidence is now added through the commit picker,
+  and the teammate step uses the confirm/dispute form.
+
+Previous round (product decisions):
 - `npm test` on LiteSVM: **28/28**. With `LOCALNET_RPC_URL`, **39/39**, adding
   team-size enforcement, leaving teams, event editing, revocation onchain
   (attestation closed, verification fails, re-issue refused, eligibility

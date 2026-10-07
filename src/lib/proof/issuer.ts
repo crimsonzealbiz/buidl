@@ -75,3 +75,36 @@ export async function ensureIssuerSetup(ledger: Ledger, issuer: KeyPairSigner, c
   }
   return { addresses: addrs, actions };
 }
+
+/** Rough upper bound for one attestation (rent for the account plus fees). */
+export const MIN_ISSUER_LAMPORTS = 10_000_000n; // 0.01 SOL
+
+export type IssuerHealth = {
+  authority: string;
+  balanceSol: number;
+  credentialExists: boolean;
+  schemaExists: boolean;
+  problems: string[];
+};
+
+/** What an admin needs to know before a demo: is the issuer funded and set up? */
+export async function issuerHealth(ledger: Ledger, authority: Address, cfg: IssuerConfig): Promise<IssuerHealth> {
+  const addrs = await issuerAddresses(authority, cfg);
+  const [lamports, cred, schema] = await Promise.all([
+    ledger.balance(authority),
+    ledger.getAccount(addrs.credential),
+    ledger.getAccount(addrs.schema),
+  ]);
+  const problems: string[] = [];
+  if (lamports < MIN_ISSUER_LAMPORTS) {
+    problems.push(`Issuer wallet ${authority} has ${Number(lamports) / 1e9} SOL; fund it with devnet SOL`);
+  }
+  if (!cred.exists || !schema.exists) problems.push("Issuer credential/schema not created yet; run `npm run sas:setup`");
+  return {
+    authority,
+    balanceSol: Number(lamports) / 1e9,
+    credentialExists: cred.exists,
+    schemaExists: schema.exists,
+    problems,
+  };
+}

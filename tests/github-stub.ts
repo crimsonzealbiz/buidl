@@ -66,6 +66,10 @@ export class GithubStub {
         private: !!repo.private,
       });
     }
+    if (rest === "/commits") {
+      // Newest first, like GitHub. The `author` filter is applied by the caller via author.id.
+      return this.json([...repo.commits].reverse().map(commitBody));
+    }
     let cm = rest.match(/^\/commits\/(.+)$/);
     if (cm) {
       if (repo.commits.length === 0) return this.json({ message: "Git Repository is empty." }, 409);

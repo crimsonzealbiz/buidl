@@ -6,6 +6,7 @@ import { contributionsForUser } from "@/lib/domain/submissions";
 import { proofsForUser } from "@/lib/proof/service";
 import { Flash, Status, fmt, type PageSearch } from "@/components/ui";
 import { isPlatformAdmin } from "@/lib/domain/context";
+import { nextSteps } from "@/lib/domain/next-steps";
 import { makeCtx, requireSession } from "@/server/session";
 
 export default async function Dashboard({ searchParams }: { searchParams: PageSearch }) {
@@ -22,11 +23,37 @@ export default async function Dashboard({ searchParams }: { searchParams: PageSe
   const contribs = await contributionsForUser(db, user.id);
   const proofs = await proofsForUser(db, user.id);
   const eventSlug = new Map(regs.map((r) => [r.event.id, r.event.slug]));
+  const steps = await nextSteps(db, user);
 
   return (
     <>
       <Flash searchParams={sp} />
       <h1>@{user.githubLogin}</h1>
+      <section className="card">
+        <h3 style={{ marginTop: 0 }}>Next steps</h3>
+        {steps.builder.length === 0 && steps.staff.length === 0 && <p className="muted">You&apos;re all caught up.</p>}
+        <ol className="steps">
+          {steps.builder.map((st, i) => (
+            <li key={i}>
+              <Link href={st.href}>{st.label}</Link>
+              {st.detail && <span className="muted"> · {st.detail}</span>}
+            </li>
+          ))}
+        </ol>
+        {steps.staff.length > 0 && (
+          <>
+            <h3>Staff</h3>
+            <ul>
+              {steps.staff.map((st, i) => (
+                <li key={i}>
+                  <Link href={st.href}>{st.label}</Link>
+                  {st.detail && <span className="muted"> · {st.detail}</span>}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
       <div className="grid">
         <div className="card">
           <h3 style={{ marginTop: 0 }}>GitHub identity</h3>

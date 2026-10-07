@@ -3,7 +3,7 @@ import { listEvents } from "@/lib/domain/events";
 import { isPlatformAdmin } from "@/lib/domain/context";
 import { Flash, fmt, type PageSearch } from "@/components/ui";
 import { getSession, makeCtx } from "@/server/session";
-import { createEventAction } from "./actions";
+import { createEventAction, createSampleEventAction } from "./actions";
 import { EventFields } from "@/components/event-form";
 
 export default async function EventsPage({ searchParams }: { searchParams: PageSearch }) {
@@ -29,6 +29,10 @@ export default async function EventsPage({ searchParams }: { searchParams: PageS
       {session && isPlatformAdmin(session.user) && (
         <>
           <h2>Create an event</h2>
+          <form action={createSampleEventAction} className="card row">
+            <span>Preparing a demo? Create a sample event that is open now, with prizes and a demo-day opportunity.</span>
+            <button type="submit" className="secondary">Create sample event</button>
+          </form>
           <form action={createEventAction} className="stack card">
             <label>Slug (permanent, used in URLs and proofs)<input name="slug" required pattern="[a-z0-9-]+" placeholder="solana-summer-2026" /></label>
             <EventFields />

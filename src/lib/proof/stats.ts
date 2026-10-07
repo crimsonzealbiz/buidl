@@ -31,7 +31,7 @@ export const STAT_CATALOG = {
   },
   teammate_confirmations: {
     label: "Teammate confirmations",
-    description: "Number of teammates who corroborated this contribution.",
+    description: "Number of teammates who corroborated this contribution (disputes are not counted).",
     compute: (i) => String(i.teammateConfirmations),
   },
   team_size: {

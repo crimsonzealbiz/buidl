@@ -74,6 +74,12 @@ export class GithubClient {
     return this.get<GithubCommit>(`/repos/${enc(owner)}/${enc(repo)}/commits/${enc(branch)}`, true);
   }
 
+  /** Recent commits on a branch by an author (newest first). */
+  async listCommits(owner: string, repo: string, branch: string, authorLogin: string, perPage = 30) {
+    const q = new URLSearchParams({ sha: branch, author: authorLogin, per_page: String(perPage) });
+    return (await this.get<GithubCommit[]>(`/repos/${enc(owner)}/${enc(repo)}/commits?${q}`, true)) ?? [];
+  }
+
   getCommit(owner: string, repo: string, sha: string) {
     return this.get<GithubCommit>(`/repos/${enc(owner)}/${enc(repo)}/commits/${enc(sha)}`, true);
   }

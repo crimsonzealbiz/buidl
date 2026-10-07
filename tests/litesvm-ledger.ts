@@ -33,6 +33,9 @@ export class LiteSvmLedger implements Ledger {
   async getAccount(address: Address) {
     return this.svm.getAccount(address);
   }
+  async balance(address: Address) {
+    return this.svm.getBalance(address) ?? 0n;
+  }
   async genesisHash() {
     return "litesvm-local";
   }

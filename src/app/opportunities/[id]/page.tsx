@@ -1,4 +1,7 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { hasStaffRole } from "@/lib/domain/events";
+import { isPlatformAdmin } from "@/lib/domain/context";
 import { and, eq } from "drizzle-orm";
 import { applications } from "@/db/schema";
 import { AppError } from "@/lib/errors";
@@ -19,7 +22,11 @@ export default async function OpportunityPage({ params, searchParams }: Props) {
     if (e instanceof AppError && e.code === "not_found") notFound();
     throw e;
   });
-  const isOwner = session?.user.id === opp.createdBy;
+  const isOwner =
+    !!session &&
+    (session.user.id === opp.createdBy ||
+      isPlatformAdmin(session.user) ||
+      (!!opp.criteria.eventId && (await hasStaffRole(ctx.db, opp.criteria.eventId, session.user.id, "organizer"))));
   const applied = session
     ? await ctx.db.query.applications.findFirst({
         where: and(eq(applications.opportunityId, id), eq(applications.userId, session.user.id)),
@@ -70,7 +77,20 @@ export default async function OpportunityPage({ params, searchParams }: Props) {
       {isOwner && (
         <>
           <h2>Applications ({apps.length})</h2>
-          <ul>{apps.map((a) => <li key={a.id}>{fmt(a.createdAt)}: {a.verifiedAttestations.join(", ")} {a.note && `: ${a.note}`}</li>)}</ul>
+          {apps.length === 0 && <p className="muted">No applications yet.</p>}
+          {apps.map(({ application: a, user: applicant }) => (
+            <div key={a.id} className="card">
+              <strong><Link href={`/u/${applicant.githubLogin}`}>@{applicant.githubLogin}</Link></strong>{" "}
+              <span className="muted">applied {fmt(a.createdAt)} · eligibility verified onchain {fmt(a.verifiedAt)}</span>
+              {a.note && <p style={{ whiteSpace: "pre-wrap" }}>{a.note}</p>}
+              <div>
+                Proofs:{" "}
+                {a.verifiedAttestations.map((att) => (
+                  <Link key={att} className="mono" href={`/verify/${att}`} style={{ marginRight: 8 }}>{att.slice(0, 8)}…</Link>
+                ))}
+              </div>
+            </div>
+          ))}
         </>
       )}
     </>

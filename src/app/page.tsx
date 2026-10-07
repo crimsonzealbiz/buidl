@@ -1,12 +1,28 @@
 import Link from "next/link";
 import { configStatus } from "@/lib/config";
+import { isPlatformAdmin } from "@/lib/domain/context";
+import { loadIssuer } from "@/lib/proof/runtime";
+import { issuerHealth, type IssuerHealth } from "@/lib/proof/issuer";
 import { Flash, type PageSearch } from "@/components/ui";
 import { getSession } from "@/server/session";
 
 export default async function Home({ searchParams }: { searchParams: PageSearch }) {
   const sp = await searchParams;
   const session = await getSession();
-  const config = configStatus();
+  const admin = !!session && isPlatformAdmin(session.user);
+  const config = admin ? configStatus() : [];
+  let health: IssuerHealth | null = null;
+  let healthError: string | null = null;
+  if (admin) {
+    const loaded = await loadIssuer();
+    if (loaded.issuer) {
+      try {
+        health = await issuerHealth(loaded.issuer.ledger, loaded.issuer.signer.address, loaded.issuer.config);
+      } catch (e) {
+        healthError = `Could not reach the Solana RPC: ${(e as Error).message}`;
+      }
+    }
+  }
   return (
     <>
       <Flash searchParams={sp} />
@@ -34,20 +50,37 @@ export default async function Home({ searchParams }: { searchParams: PageSearch 
         )}
         <Link className="button secondary" href="/verify">Verify a proof</Link>
       </div>
-      <h2>Configuration</h2>
-      <div className="card table-wrap">
-        <table>
-          <tbody>
-            {config.map((c) => (
-              <tr key={c.name}>
-                <td>{c.name}</td>
-                <td><span className={`badge ${c.ok ? "ok" : "bad"}`}>{c.ok ? "ready" : "missing"}</span></td>
-                <td className="muted">{c.detail}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {admin && (
+        <>
+          <h2>Configuration <span className="muted" style={{ fontSize: "0.8rem" }}>(visible to admins only)</span></h2>
+          <div className="card table-wrap">
+            <table>
+              <tbody>
+                {config.map((c) => (
+                  <tr key={c.name}>
+                    <td>{c.name}</td>
+                    <td><span className={`badge ${c.ok ? "ok" : "bad"}`}>{c.ok ? "ready" : "missing"}</span></td>
+                    <td className="muted">{c.detail}</td>
+                  </tr>
+                ))}
+                {health && (
+                  <tr>
+                    <td>Issuer readiness</td>
+                    <td><span className={`badge ${health.problems.length ? "bad" : "ok"}`}>{health.problems.length ? "action needed" : "ready"}</span></td>
+                    <td className="muted">
+                      {health.balanceSol} SOL · credential {health.credentialExists ? "✓" : "missing"} · schema {health.schemaExists ? "✓" : "missing"}
+                      {health.problems.map((p) => <div key={p}>{p}</div>)}
+                    </td>
+                  </tr>
+                )}
+                {healthError && (
+                  <tr><td>Issuer readiness</td><td><span className="badge bad">unknown</span></td><td className="muted">{healthError}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </>
   );
 }
