@@ -1,0 +1,5 @@
+* text=auto
+# Shell scripts must keep LF endings even when cloned on Windows.
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.so binary

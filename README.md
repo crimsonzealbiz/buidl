@@ -25,6 +25,8 @@ PGlite (embedded, default) or Postgres · `@solana/kit` 8 ·
 
 ## Running locally
 
+On Windows, `scripts/setup-windows.ps1` does all of this for you; see [docs/windows-setup.md](docs/windows-setup.md).
+
 ```bash
 npm install
 cp .env.example .env.local      # fill in SESSION_SECRET, GitHub OAuth, ADMIN_GITHUB_LOGINS
