@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
@@ -24,6 +25,8 @@ export async function openDb(url = process.env.DATABASE_URL): Promise<Db> {
     return db as unknown as Db;
   }
   const dataDir = url === "memory://" ? undefined : (url ?? path.join(process.cwd(), ".data", "pglite"));
+  // PGlite does not create missing parent folders (e.g. .data/ on a fresh clone).
+  if (dataDir) mkdirSync(dataDir, { recursive: true });
   const client = dataDir ? new PGlite(dataDir) : new PGlite();
   const db = drizzlePglite(client, { schema });
   await migratePglite(db, { migrationsFolder });
@@ -34,7 +37,11 @@ const globalForDb = globalThis as unknown as { __buidlDb?: Promise<Db> };
 
 /** Process-wide database handle for the running app. */
 export function getDb(): Promise<Db> {
-  globalForDb.__buidlDb ??= openDb();
+  // Don't cache a failed open: the next request should retry instead of failing forever.
+  globalForDb.__buidlDb ??= openDb().catch((e) => {
+    globalForDb.__buidlDb = undefined;
+    throw e;
+  });
   return globalForDb.__buidlDb;
 }
 

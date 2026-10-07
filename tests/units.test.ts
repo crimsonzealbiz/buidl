@@ -82,3 +82,16 @@ describe("token encryption", () => {
     expect(decryptSecret(a)).toBeNull();
   });
 });
+
+describe("database bootstrap", () => {
+  it("creates the PGlite data folder on a fresh clone", async () => {
+    const { mkdtempSync, existsSync } = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const dir = path.join(mkdtempSync(path.join(os.tmpdir(), "buidl-")), "missing", "pglite");
+    const { openDb } = await import("@/db");
+    const db = await openDb(dir);
+    expect(existsSync(dir)).toBe(true);
+    expect(await db.query.users.findMany()).toEqual([]);
+  });
+});
