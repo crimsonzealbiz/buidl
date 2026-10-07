@@ -24,7 +24,10 @@ export async function openDb(url = process.env.DATABASE_URL): Promise<Db> {
     await migratePg(db, { migrationsFolder });
     return db as unknown as Db;
   }
-  const dataDir = url === "memory://" ? undefined : (url ?? path.join(process.cwd(), ".data", "pglite"));
+  // Serverless hosts (Vercel) only allow writes under /tmp, which is per-instance and
+  // wiped on cold start: a stopgap until DATABASE_URL points at real Postgres.
+  const defaultDir = process.env.VERCEL ? "/tmp/pglite" : path.join(process.cwd(), ".data", "pglite");
+  const dataDir = url === "memory://" ? undefined : (url ?? defaultDir);
   // PGlite does not create missing parent folders (e.g. .data/ on a fresh clone).
   if (dataDir) mkdirSync(dataDir, { recursive: true });
   const client = dataDir ? new PGlite(dataDir) : new PGlite();

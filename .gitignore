@@ -8,3 +8,6 @@ next-env.d.ts
 coverage/
 test-ledger/
 keys/
+.vercel
+.env*
+!.env.example
