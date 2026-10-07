@@ -23,15 +23,17 @@ import type { User } from "@/lib/auth/session";
 import { fixtureUser, testDb, testWallet } from "./helpers";
 import { GithubStub, type StubRepo } from "./github-stub";
 import { LiteSvmLedger } from "./litesvm-ledger";
+import { makeTestLedger, testLedgerKinds } from "./ledgers";
+import type { Ledger } from "@/lib/solana/ledger";
 
 const cfg: IssuerConfig = { credentialName: "buidl-identity", schemaName: "buidl-contribution", schemaVersion: 1 };
 
-describe("core flow: GitHub identity → wallet → event → contribution → review → SAS proof → verify → opportunity", () => {
+describe.each(testLedgerKinds())("core flow on %s: GitHub identity → wallet → event → contribution → review → SAS proof → verify → opportunity", (ledgerKind) => {
   let db: Db;
   let ctx: Ctx;
   let gh: GithubStub;
   let repo: StubRepo;
-  let ledger: LiteSvmLedger;
+  let ledger: Ledger;
   let issuerSigner: KeyPairSigner;
   let issuer: Issuer;
   let trust: TrustAnchor;
@@ -51,9 +53,10 @@ describe("core flow: GitHub identity → wallet → event → contribution → r
     ctx = { db, github: gh.client(), now: () => new Date() };
     for (const login of ["olivia", "rex", "alice", "bob", "carl", "dana"]) u[login] = await fixtureUser(db, login);
 
-    ledger = new LiteSvmLedger();
+    const tl = await makeTestLedger(ledgerKind);
+    ledger = tl.ledger;
     issuerSigner = await generateKeyPairSigner();
-    ledger.fund(issuerSigner.address);
+    await tl.fund(issuerSigner.address);
     issuer = { signer: issuerSigner, config: cfg, ledger };
     const setup = await ensureIssuerSetup(ledger, issuerSigner, cfg);
     expect(setup.actions).toHaveLength(2);

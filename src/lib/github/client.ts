@@ -26,7 +26,6 @@ export type GithubPull = {
   base: { repo: { id: number } };
 };
 
-const API = "https://api.github.com";
 
 /**
  * Minimal GitHub REST client. Uses the signed-in user's OAuth token when
@@ -36,6 +35,8 @@ export class GithubClient {
   constructor(
     private readonly token: string | null,
     private readonly fetchImpl: FetchLike = fetch,
+    /** Override for GitHub Enterprise (or a local stub in end-to-end tests). */
+    private readonly baseUrl = (process.env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/$/, ""),
   ) {}
 
   private async get<T>(path: string, allow404 = false): Promise<T | null> {
@@ -47,7 +48,7 @@ export class GithubClient {
     if (this.token) headers.authorization = `Bearer ${this.token}`;
     let res: Response;
     try {
-      res = await this.fetchImpl(`${API}${path}`, { headers });
+      res = await this.fetchImpl(`${this.baseUrl}${path}`, { headers });
     } catch (e) {
       throw new AppError("upstream_failed", `GitHub API unreachable: ${(e as Error).message}`);
     }

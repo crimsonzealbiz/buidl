@@ -17,18 +17,22 @@
     "db:generate": "drizzle-kit generate",
     "sas:setup": "tsx scripts/sas-setup.ts",
     "verify": "tsx scripts/verify-proof.ts",
-    "localnet": "bash scripts/localnet.sh"
+    "localnet": "bash scripts/localnet.sh",
+    "issuer:keygen": "tsx scripts/new-issuer-key.ts",
+    "e2e": "bash scripts/e2e.sh"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@solana/attestation": "^2.1.0",
     "@solana/kit": "^8.4.0",
     "@wallet-standard/app": "^1.1.1",
+    "@wallet-standard/base": "^1.1.1",
     "drizzle-orm": "^0.45.3",
     "next": "^16.4.0",
     "pg": "^8.23.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "server-only": "^0.0.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -39,6 +43,7 @@
     "@types/react-dom": "^19.3.0",
     "drizzle-kit": "^0.31.11",
     "litesvm": "^1.5.0",
+    "playwright": "^1.56.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
