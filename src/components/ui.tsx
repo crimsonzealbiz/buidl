@@ -21,6 +21,7 @@ const TONE: Record<string, "ok" | "warn" | "bad" | ""> = {
   draft: "",
   rejected: "bad",
   failed: "bad",
+  revoked: "bad",
   github_check_failed: "bad",
 };
 

@@ -2,13 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CONTRIBUTION_CATEGORIES } from "@/db/schema";
 import { getEventBySlug, isRegistered, listStaff, staffRoles } from "@/lib/domain/events";
-import { listMembers, teamForUser, teamRepository } from "@/lib/domain/teams";
+import { listMembers, listTeams, teamForUser, teamRepository } from "@/lib/domain/teams";
 import { listContributions, submissionForTeam } from "@/lib/domain/submissions";
 import { Flash, Status, fmt, type PageSearch } from "@/components/ui";
+import { EventFields } from "@/components/event-form";
 import { getSession, makeCtx } from "@/server/session";
 import {
   addStaffAction,
   createTeamAction,
+  leaveTeamAction,
+  updateEventAction,
   joinTeamAction,
   registerAction,
   registerRepoAction,
@@ -36,6 +39,20 @@ export default async function EventPage({ params, searchParams }: Props) {
   const mine = contribs.find((c) => c.user.id === user?.id)?.contribution;
   const staff = await listStaff(db, event.id);
   const open = new Date() < event.submissionDeadline;
+  const isStaff = roles.length > 0;
+  const allTeams = isStaff
+    ? await Promise.all(
+        (await listTeams(db, event.id)).map(async (t) => {
+          const sub = await submissionForTeam(db, t.id);
+          return {
+            team: t,
+            members: (await listMembers(db, t.id)).length,
+            submission: sub,
+            claims: sub ? (await listContributions(db, sub.id)).map((c) => c.contribution) : [],
+          };
+        }),
+      )
+    : [];
   const hidden = (name: string, value: string) => <input type="hidden" name={name} value={value} />;
 
   return (
@@ -46,7 +63,17 @@ export default async function EventPage({ params, searchParams }: Props) {
         {fmt(event.startsAt)} → {fmt(event.endsAt)} · submissions close {fmt(event.submissionDeadline)}
         {roles.length > 0 && <> · you are {roles.join(" & ")}</>}
       </p>
+      <p className="muted">
+        Chain: {event.chain} · teams up to {event.maxTeamSize} members
+        {event.websiteUrl && <> · <a href={event.websiteUrl} rel="noreferrer noopener">website</a></>}
+      </p>
       {event.description && <p style={{ whiteSpace: "pre-wrap" }}>{event.description}</p>}
+      {event.prizes.length > 0 && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Prizes</h3>
+          <ul>{event.prizes.map((p, i) => <li key={i}><strong>{p.title}</strong>{p.reward && ` — ${p.reward}`}</li>)}</ul>
+        </div>
+      )}
       {roles.includes("reviewer") && <p><Link className="button" href={`/events/${slug}/review`}>Open review queue</Link></p>}
 
       {!user && <div className="flash warn">Sign in with GitHub to register.</div>}
@@ -79,7 +106,16 @@ export default async function EventPage({ params, searchParams }: Props) {
           <h2>Team: {team.name}</h2>
           <div className="card">
             <div>Join code for teammates: <span className="mono">{team.joinCode}</span></div>
-            <div className="muted">Members: {members.map((m) => `@${m.user.githubLogin}`).join(", ")}</div>
+            <div className="muted">
+              Members ({members.length}/{event.maxTeamSize}): {members.map((m) => `@${m.user.githubLogin}`).join(", ")}
+            </div>
+            {open && (!mine || mine.status === "draft" || mine.status === "changes_requested") && (
+              <form action={leaveTeamAction} style={{ marginTop: 8 }}>
+                {hidden("teamId", team.id)}{hidden("slug", slug)}
+                <button className="secondary" type="submit">Leave team</button>
+                <span className="muted"> Your draft contribution, if any, is discarded.</span>
+              </form>
+            )}
           </div>
 
           <h3>Repository</h3>
@@ -159,6 +195,41 @@ export default async function EventPage({ params, searchParams }: Props) {
               )}
             </>
           )}
+        </>
+      )}
+
+      {roles.includes("organizer") && (
+        <details className="card">
+          <summary><strong>Edit event settings</strong></summary>
+          <form action={updateEventAction} className="stack" style={{ marginTop: 12 }}>
+            {hidden("eventId", event.id)}{hidden("slug", slug)}
+            <EventFields event={event} />
+            <button type="submit">Save changes</button>
+          </form>
+        </details>
+      )}
+
+      {isStaff && (
+        <>
+          <h2>All teams ({allTeams.length})</h2>
+          <div className="card table-wrap">
+            <table>
+              <thead><tr><th>Team</th><th>Members</th><th>Product</th><th>Claims</th></tr></thead>
+              <tbody>
+                {allTeams.map(({ team: t, members: n, submission: sub, claims }) => (
+                  <tr key={t.id}>
+                    <td>{t.name}</td>
+                    <td>{n}</td>
+                    <td>{sub ? sub.productName : <span className="muted">not submitted</span>}</td>
+                    <td>
+                      {claims.length === 0 && <span className="muted">none</span>}
+                      {claims.map((c) => <span key={c.id} style={{ marginRight: 6 }}><Link href={`/contributions/${c.id}`}>{c.category}</Link> <Status value={c.status} /></span>)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 

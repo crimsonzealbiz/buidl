@@ -4,6 +4,7 @@ import { isPlatformAdmin } from "@/lib/domain/context";
 import { Flash, fmt, type PageSearch } from "@/components/ui";
 import { getSession, makeCtx } from "@/server/session";
 import { createEventAction } from "./actions";
+import { EventFields } from "@/components/event-form";
 
 export default async function EventsPage({ searchParams }: { searchParams: PageSearch }) {
   const sp = await searchParams;
@@ -21,6 +22,7 @@ export default async function EventsPage({ searchParams }: { searchParams: PageS
             <strong>{e.name}</strong>
             <div className="muted">{fmt(e.startsAt)} → {fmt(e.endsAt)}</div>
             <div className="muted">Submissions close {fmt(e.submissionDeadline)}</div>
+            <div className="muted">{e.chain} · teams up to {e.maxTeamSize}{e.prizes.length ? ` · ${e.prizes.length} prize(s)` : ""}</div>
           </Link>
         ))}
       </div>
@@ -28,12 +30,8 @@ export default async function EventsPage({ searchParams }: { searchParams: PageS
         <>
           <h2>Create an event</h2>
           <form action={createEventAction} className="stack card">
-            <label>Name<input name="name" required /></label>
-            <label>Slug<input name="slug" required pattern="[a-z0-9-]+" placeholder="solana-summer-2026" /></label>
-            <label>Description<textarea name="description" /></label>
-            <label>Starts (UTC)<input name="startsAt" type="datetime-local" required /></label>
-            <label>Ends (UTC)<input name="endsAt" type="datetime-local" required /></label>
-            <label>Submission deadline (UTC)<input name="submissionDeadline" type="datetime-local" required /></label>
+            <label>Slug (permanent, used in URLs and proofs)<input name="slug" required pattern="[a-z0-9-]+" placeholder="solana-summer-2026" /></label>
+            <EventFields />
             <button type="submit">Create event</button>
           </form>
         </>

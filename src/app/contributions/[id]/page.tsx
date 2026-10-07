@@ -144,7 +144,7 @@ export default async function ContributionPage({ params, searchParams }: Props) 
           ) : (
             <p className="muted">Not issued yet.</p>
           )}
-          {(isOwner || isStaff) && proof?.status !== "confirmed" && (
+          {(isOwner || isStaff) && proof?.status !== "confirmed" && proof?.status !== "revoked" && (
             <form action={issueProofAction} className="card">
               {hidden("contributionId", c.id)}
               {ownerWallet ? (

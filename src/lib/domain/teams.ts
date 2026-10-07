@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { repositories, teamMembers, teams, users } from "@/db/schema";
+import { confirmations, contributions, repositories, submissions, teamMembers, teams, users } from "@/db/schema";
 import type { Db } from "@/db";
 import { AppError, assert } from "../errors";
 import { newId, randomToken } from "../ids";
@@ -71,9 +71,59 @@ export async function createTeam(ctx: Ctx, actor: User, eventId: string, name: s
 export async function joinTeam(ctx: Ctx, actor: User, joinCode: string) {
   const team = await ctx.db.query.teams.findFirst({ where: eq(teams.joinCode, joinCode.trim()) });
   assert(team, "not_found", "No team has this join code");
-  await assertCanJoinEvent(ctx, team.eventId, actor);
+  const event = await assertCanJoinEvent(ctx, team.eventId, actor);
+  const members = await listMembers(ctx.db, team.id);
+  assert(members.length < event.maxTeamSize, "precondition_failed", `This team is full (max ${event.maxTeamSize} members)`);
   await ctx.db.insert(teamMembers).values({ teamId: team.id, userId: actor.id, eventId: team.eventId });
   return team;
+}
+
+/**
+ * Leaves a team before the deadline. Only a draft (or changes-requested)
+ * contribution can be abandoned; once a claim is under review or decided,
+ * leaving would orphan a reviewed record, so it is refused. An empty team is
+ * deleted along with its repository registration and submission.
+ */
+export async function leaveTeam(ctx: Ctx, actor: User, teamId: string) {
+  const team = await getTeam(ctx.db, teamId);
+  assert(await isTeamMember(ctx.db, teamId, actor.id), "forbidden", "You are not on this team");
+  const event = await getEvent(ctx.db, team.eventId);
+  assert(ctx.now() < event.submissionDeadline, "precondition_failed", "Teams are locked after the submission deadline");
+  const submission = await ctx.db.query.submissions.findFirst({ where: eq(submissions.teamId, teamId) });
+  const mine = submission
+    ? await ctx.db.query.contributions.findFirst({
+        where: and(eq(contributions.submissionId, submission.id), eq(contributions.userId, actor.id)),
+      })
+    : undefined;
+  assert(
+    !mine || mine.status === "draft" || mine.status === "changes_requested",
+    "precondition_failed",
+    "Your contribution is under review or decided; you cannot leave this team now",
+  );
+  return ctx.db.transaction(async (tx) => {
+    if (mine) await tx.delete(contributions).where(eq(contributions.id, mine.id));
+    if (submission) {
+      // Corroborations the leaver gave on still-open claims no longer come from a teammate.
+      const open = await tx
+        .select({ id: contributions.id })
+        .from(contributions)
+        .where(
+          and(
+            eq(contributions.submissionId, submission.id),
+            inArray(contributions.status, ["draft", "submitted", "changes_requested"]),
+          ),
+        );
+      if (open.length) {
+        await tx
+          .delete(confirmations)
+          .where(and(eq(confirmations.userId, actor.id), inArray(confirmations.contributionId, open.map((o) => o.id))));
+      }
+    }
+    await tx.delete(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, actor.id)));
+    const remaining = await tx.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).limit(1);
+    if (remaining.length === 0) await tx.delete(teams).where(eq(teams.id, teamId));
+    return { teamDeleted: remaining.length === 0 };
+  });
 }
 
 export async function teamRepository(db: Db, teamId: string) {

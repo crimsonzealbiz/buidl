@@ -4,6 +4,7 @@ import type { Db } from "@/db";
 import { sessions, users } from "@/db/schema";
 import { newId, randomToken } from "../ids";
 import type { GithubUser } from "../github/client";
+import { decryptSecret, encryptSecret } from "../crypto";
 
 export const SESSION_COOKIE = "buidl_session";
 export const OAUTH_STATE_COOKIE = "buidl_oauth_state";
@@ -43,7 +44,13 @@ export async function createSession(
 ): Promise<{ token: string; expiresAt: Date }> {
   const token = randomToken();
   const expiresAt = new Date(now.getTime() + SESSION_TTL_MS);
-  await db.insert(sessions).values({ id: newId(), tokenHash: sha256(token), userId, githubAccessToken, expiresAt });
+  await db.insert(sessions).values({
+    id: newId(),
+    tokenHash: sha256(token),
+    userId,
+    githubAccessToken: githubAccessToken ? encryptSecret(githubAccessToken) : null,
+    expiresAt,
+  });
   return { token, expiresAt };
 }
 
@@ -55,7 +62,9 @@ export async function resolveSession(db: Db, token: string | undefined, now = ne
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, sha256(token)), gt(sessions.expiresAt, now)))
     .limit(1);
-  return row[0] ?? null;
+  if (!row[0]) return null;
+  const stored = row[0].githubAccessToken;
+  return { user: row[0].user, githubAccessToken: stored ? decryptSecret(stored) : null };
 }
 
 export async function destroySession(db: Db, token: string | undefined) {

@@ -1,6 +1,6 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { eventStaff, events, registrations, users } from "@/db/schema";
+import { eventStaff, events, registrations, teamMembers, users } from "@/db/schema";
 import type { Db } from "@/db";
 import { AppError, assert } from "../errors";
 import { newId } from "../ids";
@@ -10,21 +10,55 @@ import { isPlatformAdmin, type Ctx } from "./context";
 export type Event = typeof events.$inferSelect;
 export type StaffRole = "organizer" | "reviewer";
 
-export const createEventInput = z
-  .object({
+export const EVENT_CHAINS = ["solana", "ethereum", "base", "arbitrum", "optimism", "polygon", "sui", "aptos", "bitcoin", "multichain", "other"] as const;
+
+const prizeInput = z.object({ title: z.string().trim().min(1).max(120), reward: z.string().trim().max(120).default("") });
+
+const eventFields = z.object({
+  name: z.string().trim().min(3).max(120),
+  description: z.string().max(4000).default(""),
+  startsAt: z.coerce.date(),
+  endsAt: z.coerce.date(),
+  submissionDeadline: z.coerce.date(),
+  maxTeamSize: z.coerce.number().int().min(1).max(50).default(5),
+  chain: z.enum(EVENT_CHAINS).default("solana"),
+  prizes: z.array(prizeInput).max(50).default([]),
+  websiteUrl: z
+    .string()
+    .trim()
+    .url()
+    .refine((u) => u.startsWith("https://"), "Must be an https:// URL")
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+});
+
+const datesInOrder = <T extends { startsAt: Date; endsAt: Date; submissionDeadline: Date }>(v: T) =>
+  v.endsAt > v.startsAt && v.submissionDeadline >= v.startsAt;
+const DATES_MSG = "Event must end after it starts, and the deadline must be after the start";
+
+export const createEventInput = eventFields
+  .extend({
     slug: z
       .string()
       .min(3)
       .max(48)
       .regex(/^[a-z0-9-]+$/, "lowercase letters, digits and dashes only"),
-    name: z.string().min(3).max(120),
-    description: z.string().max(4000).default(""),
-    startsAt: z.coerce.date(),
-    endsAt: z.coerce.date(),
-    submissionDeadline: z.coerce.date(),
   })
-  .refine((v) => v.endsAt > v.startsAt, "Event must end after it starts")
-  .refine((v) => v.submissionDeadline >= v.startsAt, "Submission deadline must be after the start");
+  .refine(datesInOrder, DATES_MSG);
+
+export const updateEventInput = eventFields.refine(datesInOrder, DATES_MSG);
+
+/** Parses prize lines like "Grand prize | $5,000" (reward optional). */
+export function parsePrizeLines(text: string) {
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => {
+      const [title, ...rest] = l.split("|");
+      return { title: title.trim(), reward: rest.join("|").trim() };
+    });
+}
 
 export async function createEvent(ctx: Ctx, actor: User, raw: z.input<typeof createEventInput>) {
   assert(isPlatformAdmin(actor), "forbidden", "Only platform admins can create events");
@@ -34,11 +68,39 @@ export async function createEvent(ctx: Ctx, actor: User, raw: z.input<typeof cre
   return ctx.db.transaction(async (tx) => {
     const [event] = await tx
       .insert(events)
-      .values({ id: newId(), ...input, createdBy: actor.id })
+      .values({ id: newId(), ...input, websiteUrl: input.websiteUrl ?? null, createdBy: actor.id })
       .returning();
     await tx.insert(eventStaff).values({ eventId: event.id, userId: actor.id, role: "organizer" });
     return event;
   });
+}
+
+/**
+ * Organizers edit event details. Lowering the team size below a team's current
+ * size is refused so nobody is silently removed.
+ */
+export async function updateEvent(ctx: Ctx, actor: User, eventId: string, raw: z.input<typeof updateEventInput>) {
+  await getEvent(ctx.db, eventId);
+  assert(await hasStaffRole(ctx.db, eventId, actor.id, "organizer"), "forbidden", "Only organizers can edit this event");
+  const input = updateEventInput.parse(raw);
+  const [largest] = await ctx.db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(teamMembers)
+    .where(eq(teamMembers.eventId, eventId))
+    .groupBy(teamMembers.teamId)
+    .orderBy(sql`count(*) desc`)
+    .limit(1);
+  assert(
+    !largest || largest.n <= input.maxTeamSize,
+    "precondition_failed",
+    `A team already has ${largest?.n} members; the team size limit cannot be lower than that`,
+  );
+  const [row] = await ctx.db
+    .update(events)
+    .set({ ...input, websiteUrl: input.websiteUrl ?? null, updatedAt: ctx.now() })
+    .where(eq(events.id, eventId))
+    .returning();
+  return row;
 }
 
 export async function getEvent(db: Db, id: string) {

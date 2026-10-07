@@ -2,6 +2,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   decodeSchema,
   deriveAttestationPda,
+  deriveEventAuthorityAddress,
+  getCloseAttestationInstruction,
   getCreateAttestationInstructionAsync,
   serializeAttestationData,
 } from "@solana/attestation";
@@ -13,6 +15,8 @@ import { newId } from "../ids";
 import type { User } from "../auth/session";
 import type { Ctx } from "../domain/context";
 import { hasStaffRole } from "../domain/events";
+import { isPlatformAdmin } from "../domain/context";
+import { z } from "zod";
 import { getContribution, getSubmission } from "../domain/submissions";
 import { latestReview } from "../domain/reviews";
 import { activeWallet } from "../wallet/link";
@@ -51,6 +55,7 @@ export async function issueProof(ctx: Ctx, issuer: Issuer, actor: User, contribu
 
   const existing = await ctx.db.query.proofs.findFirst({ where: eq(proofs.contributionId, c.id) });
   if (existing?.status === "confirmed") return existing;
+  assert(existing?.status !== "revoked", "precondition_failed", "This proof was revoked and cannot be re-issued");
 
   await assertSafeCluster(issuer.ledger);
   const addrs = await issuerAddresses(issuer.signer.address, issuer.config);
@@ -180,6 +185,58 @@ export async function reconcile(db: Db, issuer: Issuer, proof: Proof): Promise<P
   const [row] = await db
     .update(proofs)
     .set({ status: "confirmed", error: null, confirmedAt: proof.confirmedAt ?? new Date() })
+    .where(eq(proofs.id, proof.id))
+    .returning();
+  return row;
+}
+
+/**
+ * Revokes a proof by closing its attestation onchain. Only the event's
+ * organizers (or platform admins) can revoke, and a reason is required and
+ * kept. After this, verification reports the proof as not found and it stops
+ * counting toward opportunities.
+ */
+export async function revokeProof(ctx: Ctx, issuer: Issuer, actor: User, proofId: string, reason: string) {
+  const why = z.string().trim().min(10, "Give a reason of at least 10 characters").max(1000).parse(reason);
+  const proof = await getProof(ctx.db, proofId);
+  assert(proof, "not_found", "Proof not found");
+  const c = await getContribution(ctx.db, proof.contributionId);
+  const submission = await getSubmission(ctx.db, c.submissionId);
+  assert(
+    isPlatformAdmin(actor) || (await hasStaffRole(ctx.db, submission.eventId, actor.id, "organizer")),
+    "forbidden",
+    "Only this event's organizers can revoke its proofs",
+  );
+  assert(proof.status === "confirmed", "precondition_failed", `Only confirmed proofs can be revoked (status: ${proof.status})`);
+  assert(
+    proof.credentialAddress === (await issuerAddresses(issuer.signer.address, issuer.config)).credential,
+    "precondition_failed",
+    "This proof was issued by a different issuer key",
+  );
+  await assertSafeCluster(issuer.ledger);
+
+  let signature: string | null = null;
+  const acc = await issuer.ledger.getAccount(toAddress(proof.attestationAddress));
+  if (acc.exists) {
+    const ix = getCloseAttestationInstruction({
+      payer: issuer.signer,
+      authority: issuer.signer,
+      credential: toAddress(proof.credentialAddress),
+      attestation: toAddress(proof.attestationAddress),
+      eventAuthority: await deriveEventAuthorityAddress(),
+      attestationProgram: toAddress(proof.programAddress),
+    });
+    try {
+      signature = await issuer.ledger.send(issuer.signer, [ix]);
+    } catch (e) {
+      throw new AppError("upstream_failed", `Revocation transaction failed: ${(e as Error).message}`);
+    }
+  }
+  // Record the revocation only once the attestation is really gone.
+  assert(!(await issuer.ledger.getAccount(toAddress(proof.attestationAddress))).exists, "upstream_failed", "Attestation still exists onchain");
+  const [row] = await ctx.db
+    .update(proofs)
+    .set({ status: "revoked", revokedAt: ctx.now(), revokedBy: actor.id, revokeReason: why, revokeTxSignature: signature })
     .where(eq(proofs.id, proof.id))
     .returning();
   return row;

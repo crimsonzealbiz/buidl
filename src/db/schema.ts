@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  integer,
   jsonb,
   pgTable,
   primaryKey,
@@ -28,7 +29,7 @@ export const sessions = pgTable("sessions", {
   id: id(),
   tokenHash: text("token_hash").notNull().unique(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  /** OAuth access token, kept server-side to call the GitHub API on the user's behalf. */
+  /** OAuth access token, encrypted (AES-256-GCM, see src/lib/crypto.ts), used to call the GitHub API on the user's behalf. */
   githubAccessToken: text("github_access_token"),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: createdAt(),
@@ -73,9 +74,18 @@ export const events = pgTable("events", {
   startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
   endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
   submissionDeadline: timestamp("submission_deadline", { withTimezone: true }).notNull(),
+  /** Maximum members per team, enforced when people join. */
+  maxTeamSize: integer("max_team_size").notNull().default(5),
+  /** Ecosystem the hackathon targets (proofs themselves are always issued on Solana). */
+  chain: text("chain").notNull().default("solana"),
+  prizes: jsonb("prizes").$type<EventPrize[]>().notNull().default([]),
+  websiteUrl: text("website_url"),
   createdBy: text("created_by").notNull().references(() => users.id),
   createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
+
+export type EventPrize = { title: string; reward: string };
 
 /** Per-event staff roles. Reviewers decide on individual contributions. */
 export const eventStaff = pgTable(
@@ -251,7 +261,7 @@ export const reviews = pgTable("reviews", {
   createdAt: createdAt(),
 });
 
-export const PROOF_STATUSES = ["pending", "sent", "confirmed", "failed"] as const;
+export const PROOF_STATUSES = ["pending", "sent", "confirmed", "failed", "revoked"] as const;
 
 /** A proof issued (or being issued) as a Solana Attestation Service attestation. */
 export const proofs = pgTable("proofs", {
@@ -275,6 +285,11 @@ export const proofs = pgTable("proofs", {
   error: text("error"),
   createdAt: createdAt(),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  /** Revocation closes the attestation onchain; the reason is kept for the record. */
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedBy: text("revoked_by").references(() => users.id),
+  revokeReason: text("revoke_reason"),
+  revokeTxSignature: text("revoke_tx_signature"),
 });
 
 export type OpportunityCriteria = {

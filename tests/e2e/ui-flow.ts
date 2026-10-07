@@ -173,6 +173,14 @@ async function main() {
     await submit(olivia.page, 'button:has-text("Add staff")');
     await expectFlash(olivia.page, "ok", /rex is now a reviewer/);
 
+    // Organizer edits settings: team size, chain, prizes.
+    await olivia.page.click("summary:has-text('Edit event settings')");
+    await olivia.page.fill('input[name="maxTeamSize"]', "2");
+    await olivia.page.fill('textarea[name="prizes"]', "Grand prize | $5,000\nBest design | $1,000");
+    await submit(olivia.page, 'button:has-text("Save changes")');
+    await expectFlash(olivia.page, "ok", /Event updated/);
+    await olivia.page.locator("text=Grand prize").first().waitFor();
+
     // Alice: register, team, repository baseline.
     const ev = `${APP}/events/solana-summer`;
     await alice.page.goto(ev);
@@ -272,6 +280,7 @@ async function main() {
     await alice.page.locator("a.mono").first().click();
     await alice.page.waitForURL(/\/proofs\//);
     await snap(alice.page, "proof-page");
+    const proofUrl = alice.page.url().split("?")[0];
     const [download] = await Promise.all([
       alice.page.waitForEvent("download"),
       alice.page.click('a:has-text("Download evidence")'),
@@ -308,6 +317,16 @@ async function main() {
     await submit(alice.page, 'button:has-text("Apply")');
     await expectFlash(alice.page, "ok", /eligibility was verified onchain/);
     await snap(alice.page, "opportunity-applied");
+
+    // Organizer revokes the proof; it stops verifying.
+    await olivia.page.goto(proofUrl);
+    await olivia.page.click("summary:has-text('Revoke this proof')");
+    await olivia.page.fill('textarea[name="reason"]', "Approved by mistake during the e2e run.");
+    await submit(olivia.page, 'button:has-text("Revoke proof")');
+    await expectFlash(olivia.page, "ok", /revoked onchain/);
+    await snap(olivia.page, "proof-revoked");
+    await vp.goto(`${APP}/verify/${exported.proof.attestation}`);
+    await expectFlash(vp, "error", /Not a valid/);
 
     console.log(JSON.stringify({ result: "PASS", attestation: exported.proof.attestation, tx: exported.proof.transaction, screenshots: SHOTS }));
   } finally {

@@ -5,16 +5,39 @@ import { solanaConfig } from "@/lib/config";
 import type { ProofBundle } from "@/lib/proof/bundle";
 import { Status, explorerUrl, fmt } from "@/components/ui";
 import { makeCtx, getSession } from "@/server/session";
+import { eq } from "drizzle-orm";
+import { users } from "@/db/schema";
+import { hasStaffRole } from "@/lib/domain/events";
+import { isPlatformAdmin } from "@/lib/domain/context";
+import { Flash, type PageSearch } from "@/components/ui";
+import { revokeProofAction } from "../../events/actions";
 
-export default async function ProofPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProofPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: PageSearch }) {
   const { id } = await params;
-  const { db } = await makeCtx(await getSession());
+  const sp = await searchParams;
+  const session = await getSession();
+  const { db } = await makeCtx(session);
   const proof = await getProof(db, id);
   if (!proof) notFound();
   const b = proof.bundle as unknown as ProofBundle;
   const rpc = solanaConfig().rpcUrl;
+  const canRevoke =
+    !!session &&
+    proof.status === "confirmed" &&
+    (isPlatformAdmin(session.user) || (await hasStaffRole(db, b.event.id, session.user.id, "organizer")));
+  const revoker = proof.revokedBy ? await db.query.users.findFirst({ where: eq(users.id, proof.revokedBy) }) : null;
   return (
     <>
+      <Flash searchParams={sp} />
+      {proof.status === "revoked" && (
+        <div className="flash error">
+          Revoked {fmt(proof.revokedAt)}{revoker && ` by @${revoker.githubLogin}`}: {proof.revokeReason}
+          {proof.revokeTxSignature && (
+            <> (<a href={explorerUrl("tx", proof.revokeTxSignature, proof.cluster, rpc)}>transaction</a>)</>
+          )}
+          . The attestation was closed onchain and no longer verifies.
+        </div>
+      )}
       <h1>{b.contribution.title}</h1>
       <p>
         <Status value={proof.status} /> <span className="muted">{b.contribution.category} · @{b.holder.githubLogin} ·{" "}
@@ -41,6 +64,20 @@ export default async function ProofPage({ params }: { params: Promise<{ id: stri
           <Link className="button" href={`/verify/${proof.attestationAddress}`}>Verify independently</Link>
           <a className="button secondary" href={`/api/proofs/${proof.id}/export`}>Download evidence (JSON)</a>
         </div>
+      )}
+      {canRevoke && (
+        <details className="card">
+          <summary><strong>Revoke this proof</strong> <span className="muted">(organizers only, cannot be undone)</span></summary>
+          <form action={revokeProofAction} className="stack" style={{ marginTop: 12 }}>
+            <input type="hidden" name="proofId" value={proof.id} />
+            <p className="muted">
+              Closes the attestation onchain. It will stop verifying and stop counting toward opportunities. Use this
+              when an approval was a mistake or the contribution turned out not to be genuine.
+            </p>
+            <label>Reason (kept on record)<textarea name="reason" required minLength={10} /></label>
+            <button type="submit">Revoke proof</button>
+          </form>
+        </details>
       )}
       <h2>Reviewer rationale</h2>
       <p style={{ whiteSpace: "pre-wrap" }}>{b.review.rationale}</p>

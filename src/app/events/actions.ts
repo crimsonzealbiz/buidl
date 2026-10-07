@@ -1,8 +1,8 @@
 "use server";
 
 import { CONTRIBUTION_CATEGORIES, EVIDENCE_KINDS } from "@/db/schema";
-import { addStaff, createEvent, registerForEvent } from "@/lib/domain/events";
-import { createTeam, joinTeam, registerRepository } from "@/lib/domain/teams";
+import { addStaff, createEvent, parsePrizeLines, registerForEvent, updateEvent, EVENT_CHAINS } from "@/lib/domain/events";
+import { createTeam, joinTeam, leaveTeam, registerRepository } from "@/lib/domain/teams";
 import {
   addEvidence,
   confirmContribution,
@@ -12,7 +12,7 @@ import {
   submitContribution,
 } from "@/lib/domain/submissions";
 import { reviewContribution } from "@/lib/domain/reviews";
-import { issueProof } from "@/lib/proof/service";
+import { getProof, issueProof, revokeProof } from "@/lib/proof/service";
 import { loadIssuer } from "@/lib/proof/runtime";
 import { AppError } from "@/lib/errors";
 import { act, str } from "@/server/actions";
@@ -28,18 +28,57 @@ function utc(v: string) {
   return v && !/[zZ]|[+-]\d\d:\d\d$/.test(v) ? `${v}Z` : v;
 }
 
+function eventFieldsFrom(form: FormData) {
+  return {
+    name: str(form, "name"),
+    description: str(form, "description"),
+    startsAt: utc(str(form, "startsAt")),
+    endsAt: utc(str(form, "endsAt")),
+    submissionDeadline: utc(str(form, "submissionDeadline")),
+    maxTeamSize: str(form, "maxTeamSize") || "5",
+    chain: (str(form, "chain") || "solana") as (typeof EVENT_CHAINS)[number],
+    prizes: parsePrizeLines(str(form, "prizes")),
+    websiteUrl: str(form, "websiteUrl"),
+  };
+}
+
+export async function updateEventAction(form: FormData) {
+  const { ctx, user } = await ctxAndUser();
+  const slug = str(form, "slug");
+  return act(`/events/${slug}`, async () => {
+    await updateEvent(ctx, user, str(form, "eventId"), eventFieldsFrom(form));
+    return "Event updated";
+  });
+}
+
+export async function leaveTeamAction(form: FormData) {
+  const { ctx, user } = await ctxAndUser();
+  return act(`/events/${str(form, "slug")}`, async () => {
+    const r = await leaveTeam(ctx, user, str(form, "teamId"));
+    return r.teamDeleted ? "You left the team; it had no other members and was removed" : "You left the team";
+  });
+}
+
+export async function revokeProofAction(form: FormData) {
+  const { ctx, user } = await ctxAndUser();
+  const id = str(form, "proofId");
+  return act(`/proofs/${id}`, async () => {
+    const loaded = await loadIssuer();
+    if (!loaded.issuer) throw new AppError("not_configured", loaded.reason);
+    if (!(await getProof(ctx.db, id))) throw new AppError("not_found", "Proof not found");
+    await revokeProof(ctx, loaded.issuer, user, id, str(form, "reason")).catch((e) => {
+      if (e instanceof AppError || (e as Error).name === "ZodError") throw e;
+      throw new AppError("upstream_failed", `Could not reach the Solana cluster: ${(e as Error).message}`);
+    });
+    return "Proof revoked onchain";
+  });
+}
+
 export async function createEventAction(form: FormData) {
   const { ctx, user } = await ctxAndUser();
   const slug = str(form, "slug");
   return act(`/events/${slug}`, async () => {
-    await createEvent(ctx, user, {
-      slug,
-      name: str(form, "name"),
-      description: str(form, "description"),
-      startsAt: utc(str(form, "startsAt")),
-      endsAt: utc(str(form, "endsAt")),
-      submissionDeadline: utc(str(form, "submissionDeadline")),
-    });
+    await createEvent(ctx, user, { slug, ...eventFieldsFrom(form) });
     return "Event created";
   });
 }

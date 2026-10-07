@@ -20,7 +20,21 @@ and acceptance criteria need to be reconciled with this work.
 | 4 | Product submission, per-person contributions, evidence, teammate confirmations, reviewer decisions | Done |
 | 5 | SAS proof issuance, independent verification, evidence export | Done on LiteSVM + local validator; **devnet not exercised** |
 | 6 | Proof-based opportunity eligibility, UI for the full flow | Done |
+| 7 | Product decisions round 1: event settings, leaving teams, proof revocation, token encryption | Done |
 | — | X/Ethos, token badges, community features, AI | Deferred by design |
+
+## Product decisions (from review of the first build)
+
+| Topic | Decision | Implemented as |
+|---|---|---|
+| Repositories | One per team | Enforced (unchanged) |
+| Repo visibility | Public only | Enforced (unchanged) |
+| Leaving a team | Allowed | Before the deadline, if your own claim is still a draft or has changes requested (it is discarded). Your confirmations on teammates' open claims are withdrawn. An empty team is deleted. |
+| Event editing | Name, description, dates, max team size, chain, prizes, website | Organizer-only edit form. Team size is enforced on join, and can't be lowered below an existing team's size. Slug stays fixed because it is in URLs and proofs. |
+| Proof issuance | Manual after approval (no background jobs) | "Issue proof" button for the contributor or event staff (unchanged) |
+| GitHub tokens | Encrypt | AES-256-GCM at rest (`src/lib/crypto.ts`), key from `TOKEN_ENCRYPTION_KEY` or derived from `SESSION_SECRET` |
+| Proof revocation | Build it | Organizers or admins close the attestation onchain with a required reason. Recorded only after the account is confirmed gone. A revoked proof can't be re-issued, fails verification, and stops counting for opportunities. |
+| Staff overview | Added | Event page lists every team, its product, and each member's claim status for organizers and reviewers |
 
 ## SAS compatibility findings (checked first)
 
@@ -69,6 +83,16 @@ and acceptance criteria need to be reconciled with this work.
 
 - `npm run typecheck`: clean.
 - `npx next build`: succeeds (22 routes).
+Latest run (after the product-decision round):
+- `npm test` on LiteSVM: **28/28**. With `LOCALNET_RPC_URL`, **39/39**, adding
+  team-size enforcement, leaving teams, event editing, revocation onchain
+  (attestation closed, verification fails, re-issue refused, eligibility
+  lost), and token encryption (round-trip, fresh IV, tamper and wrong-key rejection).
+- `npm run e2e`: **PASS**, now also covering editing event settings (team
+  size, prizes) and revoking a proof from the proof page, after which public
+  verification reports it invalid.
+
+Earlier run:
 - `npm test`: **25/25 passed** (3 files):
   - wallet linkage: valid sig, wrong wallet, wrong message, replay, other
     user's challenge, expiry, one wallet ↔ one identity, relink revokes
@@ -121,14 +145,10 @@ optionally `DATABASE_URL`, `SOLANA_RPC_URL`, `ISSUER_AUTHORITY`, `GITHUB_TOKEN`.
 ## Incomplete / known gaps
 
 - Devnet issuance and live GitHub not yet exercised (see blockers).
-- Proof revocation (SAS `closeAttestation`) is not implemented. The verifier
-  already treats a closed attestation as invalid.
-- One repository per team; public repositories only (OAuth scope is `read:user`).
-- No leaving or removing team members; no editing an event after creation.
-- Proof issuance runs synchronously inside the request. A job queue would be
-  better at scale.
+- One repository per team and public repositories only (product decisions).
+- Organizers can't remove someone else from a team; members leave themselves.
+- Proof issuance is a manual step and runs inside the request (product decision).
 - Opportunity pages re-verify every proof via RPC on each view (no caching).
-- GitHub OAuth access tokens are stored unencrypted in `sessions`.
 - No rate limiting. Mutations use Next.js server actions (origin-checked) and
   SameSite=Lax cookies.
 - Visual design is functional, not polished.

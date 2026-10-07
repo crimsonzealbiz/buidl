@@ -2,8 +2,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import type { Db } from "@/db";
 import type { Ctx } from "@/lib/domain/context";
-import { addStaff, createEvent, registerForEvent } from "@/lib/domain/events";
-import { createTeam, joinTeam, registerRepository } from "@/lib/domain/teams";
+import { addStaff, createEvent, registerForEvent, updateEvent } from "@/lib/domain/events";
+import { createTeam, joinTeam, leaveTeam, listMembers, registerRepository } from "@/lib/domain/teams";
 import {
   addEvidence,
   confirmContribution,
@@ -15,7 +15,7 @@ import { reviewContribution, reviewQueue } from "@/lib/domain/reviews";
 import { applyToOpportunity, checkEligibility, createOpportunity } from "@/lib/domain/opportunities";
 import { completeLink, createLinkChallenge } from "@/lib/wallet/link";
 import { ensureIssuerSetup, issuerAddresses, type IssuerConfig } from "@/lib/proof/issuer";
-import { exportEvidence, issueProof, type Issuer } from "@/lib/proof/service";
+import { exportEvidence, issueProof, revokeProof, type Issuer } from "@/lib/proof/service";
 import { verifyProof, type TrustAnchor } from "@/lib/proof/verify";
 import type { ProofBundle } from "@/lib/proof/bundle";
 import { MAINNET_GENESIS_HASH } from "@/lib/solana/ledger";
@@ -51,7 +51,7 @@ describe.each(testLedgerKinds())("core flow on %s: GitHub identity â†’ wallet â†
     db = await testDb();
     gh = new GithubStub();
     ctx = { db, github: gh.client(), now: () => new Date() };
-    for (const login of ["olivia", "rex", "alice", "bob", "carl", "dana"]) u[login] = await fixtureUser(db, login);
+    for (const login of ["olivia", "rex", "alice", "bob", "carl", "dana", "erin"]) u[login] = await fixtureUser(db, login);
 
     const tl = await makeTestLedger(ledgerKind);
     ledger = tl.ledger;
@@ -110,6 +110,36 @@ describe.each(testLedgerKinds())("core flow on %s: GitHub identity â†’ wallet â†
     // Work during the event.
     aliceSha = gh.commit(repo, u.alice.githubId);
     carlSha = gh.commit(repo, u.carl.githubId);
+  });
+
+  it("organizers edit event settings; team size is enforced; builders can leave teams", async () => {
+    const base = {
+      name: "Solana Summer Hack",
+      startsAt: new Date(Date.now() - 3600_000),
+      endsAt: new Date(Date.now() + 2 * 86400_000),
+      submissionDeadline: new Date(Date.now() + 86400_000),
+    };
+    await expect(updateEvent(ctx, u.rex, eventId, { ...base, maxTeamSize: 4 })).rejects.toThrow(/organizers/);
+    await expect(updateEvent(ctx, u.olivia, eventId, { ...base, maxTeamSize: 3 })).rejects.toThrow(/already has 4/);
+    const updated = await updateEvent(ctx, u.olivia, eventId, {
+      ...base,
+      maxTeamSize: 4,
+      chain: "solana",
+      prizes: [{ title: "Grand prize", reward: "$5,000" }, { title: "Best design", reward: "" }],
+      websiteUrl: "https://summer.example",
+    });
+    expect(updated.prizes).toHaveLength(2);
+    expect(updated.maxTeamSize).toBe(4);
+
+    await registerForEvent(ctx, u.erin, eventId);
+    const teamX = (await import("@/lib/domain/teams")).getTeam(db, teamId);
+    await expect(joinTeam(ctx, u.erin, (await teamX).joinCode)).rejects.toThrow(/full/);
+
+    // Erin starts a solo team and leaves it: the empty team is removed.
+    const solo = await createTeam(ctx, u.erin, eventId, "Solo");
+    expect((await leaveTeam(ctx, u.erin, solo.id)).teamDeleted).toBe(true);
+    await expect(leaveTeam(ctx, u.erin, teamId)).rejects.toThrow(/not on this team/);
+    expect((await listMembers(db, teamId)).length).toBe(4);
   });
 
   it("team submits the product; each member writes their own contribution with evidence", async () => {
@@ -366,6 +396,23 @@ describe.each(testLedgerKinds())("core flow on %s: GitHub identity â†’ wallet â†
     const fresh = await checkEligibility(ctx, ledger2, trust, u.bob, opp);
     expect(fresh.eligible).toBe(false);
     expect(fresh.unverified).toHaveLength(1);
+  });
+
+  it("organizers can revoke a proof; it then fails verification and stops counting", async () => {
+    const { proofForContribution } = await import("@/lib/proof/service");
+    const bobProof = (await proofForContribution(db, contrib.bob))!;
+    await expect(revokeProof(ctx, issuer, u.rex, bobProof.id, "Reviewer is not an organizer")).rejects.toThrow(/organizers/);
+    await expect(revokeProof(ctx, issuer, u.olivia, bobProof.id, "short")).rejects.toThrow(/10 characters/);
+    const revoked = await revokeProof(ctx, issuer, u.olivia, bobProof.id, "Design files were taken from another team.");
+    expect(revoked.status).toBe("revoked");
+    expect(revoked.revokeTxSignature).toBeTruthy();
+    expect((await ledger.getAccount(bobProof.attestationAddress as never)).exists).toBe(false);
+    const v = await verifyProof(ledger, bobProof.attestationAddress, trust);
+    expect(v.valid).toBe(false);
+    await expect(issueProof(ctx, issuer, u.olivia, contrib.bob)).rejects.toThrow(/revoked/);
+    const { listOpportunities } = await import("@/lib/domain/opportunities");
+    const opp = (await listOpportunities(db))[0];
+    expect((await checkEligibility(ctx, ledger, trust, u.bob, opp)).eligible).toBe(false);
   });
 
   it("refuses to issue on mainnet", async () => {

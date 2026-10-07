@@ -66,3 +66,19 @@ describe("proof encoding", () => {
     expect(parseLinkMessage(m + "\nextra")).toBeNull();
   });
 });
+
+describe("token encryption", () => {
+  it("round-trips, uses a fresh IV, and rejects tampering or a different key", async () => {
+    process.env.SESSION_SECRET = "unit-test-secret";
+    const { encryptSecret, decryptSecret } = await import("@/lib/crypto");
+    const a = encryptSecret("gho_secret");
+    expect(a).not.toContain("gho_secret");
+    expect(encryptSecret("gho_secret")).not.toBe(a);
+    expect(decryptSecret(a)).toBe("gho_secret");
+    const parts = a.split(".");
+    parts[3] = Buffer.from("x" + Buffer.from(parts[3], "base64url").toString("latin1")).toString("base64url");
+    expect(decryptSecret(parts.join("."))).toBeNull();
+    process.env.SESSION_SECRET = "another-secret";
+    expect(decryptSecret(a)).toBeNull();
+  });
+});
