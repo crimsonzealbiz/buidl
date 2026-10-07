@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getWallets } from "@wallet-standard/app";
 import type { Wallet, WalletAccount } from "@wallet-standard/base";
 import { getBase58Decoder } from "@solana/kit";
@@ -16,10 +16,38 @@ function canSign(w: Wallet) {
   return "solana:signMessage" in w.features && "standard:connect" in w.features && w.chains.some((c) => c.startsWith("solana:"));
 }
 
+const WALLET_TIMEOUT_MS = 90_000;
+
+/** Wallet extensions can hang silently (e.g. a crashed background worker), so every wallet call gets a deadline. */
+function withTimeout<T>(p: Promise<T>, walletName: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(
+      () => reject(new Error(`${walletName} did not respond. Unlock it, or reload this page (or the extension) and try again.`)),
+      WALLET_TIMEOUT_MS,
+    );
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
+function walletErrorMessage(e: unknown, walletName: string): string {
+  const err = e as { message?: string; code?: number; name?: string };
+  const msg = err?.message ?? String(e);
+  if (err?.code === 4001 || /reject|denied|cancel|declined/i.test(msg)) return `Request cancelled in ${walletName}.`;
+  if (/disconnected port|service worker|extension context/i.test(msg)) {
+    return `${walletName} lost its connection. Reload this page (or restart the extension) and try again.`;
+  }
+  return msg || "Linking failed";
+}
+
 export function WalletLinker() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [status, setStatus] = useState<{ tone: "ok" | "error" | "warn"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Bumped on every attempt and on cancel, so a hung wallet call that settles late is ignored.
+  const attempt = useRef(0);
 
   useEffect(() => {
     const api = getWallets();
@@ -29,13 +57,25 @@ export function WalletLinker() {
     return () => offs.forEach((off) => off());
   }, []);
 
-  async function link(wallet: Wallet) {
-    setBusy(true);
+  function cancel() {
+    attempt.current++;
+    setBusy(false);
     setStatus(null);
+  }
+
+  async function link(wallet: Wallet) {
+    const id = ++attempt.current;
+    const live = () => attempt.current === id;
+    setBusy(true);
+    setStatus({ tone: "warn", text: `Waiting for ${wallet.name}… approve the connection in its popup.` });
     try {
-      const { accounts } = await (wallet.features as unknown as ConnectFeature)["standard:connect"].connect();
-      const account = accounts[0];
-      if (!account) throw new Error("The wallet did not share an account");
+      const { accounts } = await withTimeout(
+        (wallet.features as unknown as ConnectFeature)["standard:connect"].connect(),
+        wallet.name,
+      );
+      const account = accounts.find((a) => a.chains.some((c) => c.startsWith("solana:"))) ?? accounts[0];
+      if (!live()) return;
+      if (!account) throw new Error(`${wallet.name} did not share an account. Unlock it and try again.`);
       const chRes = await fetch("/api/wallet/challenge", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -43,10 +83,17 @@ export function WalletLinker() {
       });
       const ch = await chRes.json();
       if (!chRes.ok) throw new Error(ch.error ?? "Could not create a challenge");
-      const [out] = await (wallet.features as unknown as SignMessageFeature)["solana:signMessage"].signMessage({
-        account,
-        message: new TextEncoder().encode(ch.message),
-      });
+      setStatus({ tone: "warn", text: `Sign the message in ${wallet.name}. It costs nothing and sends no transaction.` });
+      const [out] = await withTimeout(
+        (wallet.features as unknown as SignMessageFeature)["solana:signMessage"].signMessage({
+          account,
+          message: new TextEncoder().encode(ch.message),
+        }),
+        wallet.name,
+      );
+      if (!live()) return;
+      if (!out?.signature) throw new Error(`${wallet.name} did not return a signature`);
+      setStatus({ tone: "warn", text: "Verifying signature…" });
       const signature = getBase58Decoder().decode(out.signature);
       const linkRes = await fetch("/api/wallet/link", {
         method: "POST",
@@ -58,9 +105,9 @@ export function WalletLinker() {
       setStatus({ tone: "ok", text: `Linked ${linked.address}` });
       setTimeout(() => window.location.reload(), 800);
     } catch (e) {
-      setStatus({ tone: "error", text: (e as Error).message });
+      if (live()) setStatus({ tone: "error", text: walletErrorMessage(e, wallet.name) });
     } finally {
-      setBusy(false);
+      if (live()) setBusy(false);
     }
   }
 
@@ -78,6 +125,7 @@ export function WalletLinker() {
               Sign with {w.name}
             </button>
           ))}
+          {busy && <button className="secondary" onClick={cancel}>Cancel</button>}
         </div>
       )}
       {status && <div className={`flash ${status.tone}`}>{status.text}</div>}
