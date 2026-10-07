@@ -13,6 +13,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const session = await getSession();
   return (
     <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="" />
+        <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" />
+      </head>
       <body>
         <header className="nav">
           <Link className="brand" href="/">forge</Link>
@@ -33,6 +37,15 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           )}
         </header>
         <main>{children}</main>
+        <footer className="site">
+          <div className="word">forge</div>
+          <nav>
+            <Link href="/events">Events</Link>
+            <Link href="/opportunities">Opportunities</Link>
+            <Link href="/verify">Verify a proof</Link>
+            <span>Proofs issued on Solana</span>
+          </nav>
+        </footer>
       </body>
     </html>
   );

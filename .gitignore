@@ -11,3 +11,6 @@ keys/
 .vercel
 .env*
 !.env.example
+
+# Markdown stays local only
+*.md

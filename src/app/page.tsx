@@ -26,29 +26,62 @@ export default async function Home({ searchParams }: { searchParams: PageSearch 
   return (
     <>
       <Flash searchParams={sp} />
-      <h1>Proof of what you actually built.</h1>
-      <p className="muted" style={{ maxWidth: 680 }}>
-        forge is a Solana-first identity network for hackathon builders. Your GitHub identity and a wallet you sign
-        for are linked; each teammate documents their own contribution with evidence; an event reviewer approves it;
-        and the approval is issued as a Solana Attestation Service proof that anyone can verify, with no trust in us
-        required.
-      </p>
-      <ol className="steps">
-        <li>Sign in with GitHub</li>
-        <li>Link a Solana wallet by signing a one-time message</li>
-        <li>Register for an event, form a team, register your repository (its baseline commit is recorded)</li>
-        <li>Submit the product, then each member submits their own contribution and evidence: code, design, research, docs, and more</li>
-        <li>A reviewer approves or rejects each contribution individually</li>
-        <li>Approved contributions become devnet proofs with reviewer-selected stats</li>
-        <li>Anyone can verify a proof and download its evidence; opportunities check eligibility against verified proofs</li>
-      </ol>
-      <div className="row">
-        {session ? (
-          <Link className="button" href="/dashboard">Go to your dashboard</Link>
-        ) : (
-          <a className="button" href="/api/auth/github/start">Sign in with GitHub</a>
-        )}
-        <Link className="button secondary" href="/verify">Verify a proof</Link>
+      <section className="hero">
+        <div className="eyebrow">Identity network for hackathon builders</div>
+        <h1>Proof of what you <mark>actually</mark> built.</h1>
+        <p className="lead">
+          forge links your GitHub identity to a wallet you sign for. Each teammate documents their own contribution
+          with evidence, an event reviewer approves it, and the approval is issued as a Solana Attestation Service
+          proof that anyone can verify, with no trust in us required.
+        </p>
+        <div className="row">
+          {session ? (
+            <Link className="button arrow" href="/dashboard">Go to your dashboard</Link>
+          ) : (
+            <a className="button arrow" href="/api/auth/github/start">Sign in with GitHub</a>
+          )}
+          <Link className="button secondary" href="/verify">Verify a proof</Link>
+        </div>
+      </section>
+
+      <div className="stats">
+        <div><strong>1:1</strong><span>One proof per person, per contribution</span></div>
+        <div><strong>Onchain</strong><span>Verifiable on Solana without our servers</span></div>
+        <div><strong>Reviewed</strong><span>Every proof approved by an event reviewer</span></div>
+      </div>
+
+      <div className="section-head">
+        <h2>From commit to credential.</h2>
+        <p className="muted" style={{ maxWidth: 360, margin: 0 }}>
+          Four steps take a hackathon contribution from a repository to a proof anyone can check.
+        </p>
+      </div>
+      <div className="pillars">
+        <div>
+          <span className="num">01</span>
+          <h3>Link</h3>
+          <p>Sign in with GitHub and link a Solana wallet by signing a one-time message.</p>
+        </div>
+        <div>
+          <span className="num">02</span>
+          <h3>Build</h3>
+          <p>Join an event, form a team and register your repository. Its baseline commit is recorded.</p>
+        </div>
+        <div>
+          <span className="num">03</span>
+          <h3>Document</h3>
+          <p>Each member submits their own contribution and evidence: code, design, research, docs and more.</p>
+        </div>
+        <div>
+          <span className="num">04</span>
+          <h3>Verify</h3>
+          <p>Approved work becomes a devnet proof. Anyone can verify it, and opportunities check eligibility against it.</p>
+        </div>
+      </div>
+
+      <div className="cta">
+        <h2>Show what you shipped, not just where you were.</h2>
+        <Link className="button arrow" href="/events">Browse events</Link>
       </div>
       {admin && (
         <>
