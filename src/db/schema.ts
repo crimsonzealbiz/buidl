@@ -21,6 +21,8 @@ export const users = pgTable("users", {
   githubLogin: text("github_login").notNull(),
   name: text("name"),
   avatarUrl: text("avatar_url"),
+  /** Seeded by the admin demo scenario; never signed in with GitHub. The UI labels these. */
+  demo: boolean("demo").notNull().default(false),
   createdAt: createdAt(),
 });
 
@@ -300,11 +302,17 @@ export type OpportunityCriteria = {
   categories?: string[];
   /** Minimum number of qualifying, independently verified proofs. */
   minProofs: number;
+  /** At least one qualifying proof must come from an event in one of these ecosystems (when non-empty). */
+  ecosystems?: string[];
 };
+
+export const OPPORTUNITY_KINDS = ["hackathon", "grant", "bounty", "team"] as const;
+export type OpportunityKind = (typeof OPPORTUNITY_KINDS)[number];
 
 export const opportunities = pgTable("opportunities", {
   id: id(),
   title: text("title").notNull(),
+  kind: text("kind", { enum: OPPORTUNITY_KINDS }).notNull().default("hackathon"),
   description: text("description").notNull(),
   criteria: jsonb("criteria").$type<OpportunityCriteria>().notNull(),
   createdBy: text("created_by").notNull().references(() => users.id),
