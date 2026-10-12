@@ -1,119 +1,69 @@
 import Link from "next/link";
-import { configStatus } from "@/lib/config";
-import { isPlatformAdmin } from "@/lib/domain/context";
-import { loadIssuer } from "@/lib/proof/runtime";
-import { issuerHealth, type IssuerHealth } from "@/lib/proof/issuer";
 import { Flash, type PageSearch } from "@/components/ui";
 import { getSession } from "@/server/session";
+
+const LOOP = [
+  ["Build", "Join a hackathon, form a team and ship. Your repository and submission are recorded inside the build window."],
+  ["Prove", "Claim your own contribution with evidence. The event's organizer reviews it and issues a Proof of Build on Solana."],
+  ["Identity", "Every Proof of Build lands on your builder profile: verified builds, hackathons, collaborators, ecosystems."],
+  ["Opportunity", "Hackathons, grants, bounties and teams check your verified builds, and open up when you qualify."],
+] as const;
 
 export default async function Home({ searchParams }: { searchParams: PageSearch }) {
   const sp = await searchParams;
   const session = await getSession();
-  const admin = !!session && isPlatformAdmin(session.user);
-  const config = admin ? configStatus() : [];
-  let health: IssuerHealth | null = null;
-  let healthError: string | null = null;
-  if (admin) {
-    const loaded = await loadIssuer();
-    if (loaded.issuer) {
-      try {
-        health = await issuerHealth(loaded.issuer.ledger, loaded.issuer.signer.address, loaded.issuer.config);
-      } catch (e) {
-        healthError = `Could not reach the Solana RPC: ${(e as Error).message}`;
-      }
-    }
-  }
   return (
     <>
       <Flash searchParams={sp} />
       <section className="hero">
-        <div className="eyebrow">Identity network for hackathon builders</div>
-        <h1>Proof of what you <mark>actually</mark> built.</h1>
+        <div className="eyebrow">Builder identity network on Solana</div>
+        <h1>Every build becomes part of your <mark>identity</mark>.</h1>
         <p className="lead">
-          forge links your GitHub identity to a wallet you sign for. Each teammate documents their own contribution
-          with evidence, an event reviewer approves it, and the approval is issued as a Solana Attestation Service
-          proof that anyone can verify, with no trust in us required.
+          FORGE turns verified hackathon contributions into portable Proofs of Build. Ship with your team, show what
+          you did, and carry it to your next opportunity.
         </p>
         <div className="row">
+          <Link className="button arrow" href="/discover">Discover events</Link>
           {session ? (
-            <Link className="button arrow" href="/dashboard">Go to your dashboard</Link>
+            <Link className="button secondary" href={`/u/${session.user.githubLogin}`}>Your profile</Link>
           ) : (
-            <a className="button arrow" href="/api/auth/github/start">Sign in with GitHub</a>
+            <a className="button secondary" href="/api/auth/github/start">Sign in with GitHub</a>
           )}
-          <Link className="button secondary" href="/verify">Verify a proof</Link>
         </div>
       </section>
 
-      <div className="stats">
-        <div><strong>1:1</strong><span>One proof per person, per contribution</span></div>
-        <div><strong>Onchain</strong><span>Verifiable on Solana without our servers</span></div>
-        <div><strong>Reviewed</strong><span>Every proof approved by an event reviewer</span></div>
-      </div>
-
       <div className="section-head">
-        <h2>From commit to credential.</h2>
-        <p className="muted" style={{ maxWidth: 360, margin: 0 }}>
-          Four steps take a hackathon contribution from a repository to a proof anyone can check.
+        <h2>Build. Prove. Identity. Opportunity.</h2>
+        <p className="muted" style={{ maxWidth: 380, margin: 0 }}>
+          One loop: each verified build makes the next opportunity easier to reach.
         </p>
       </div>
-      <div className="pillars">
-        <div>
-          <span className="num">01</span>
-          <h3>Link</h3>
-          <p>Sign in with GitHub and link a Solana wallet by signing a one-time message.</p>
-        </div>
-        <div>
-          <span className="num">02</span>
-          <h3>Build</h3>
-          <p>Join an event, form a team and register your repository. Its baseline commit is recorded.</p>
-        </div>
-        <div>
-          <span className="num">03</span>
-          <h3>Document</h3>
-          <p>Each member submits their own contribution and evidence: code, design, research, docs and more.</p>
-        </div>
-        <div>
-          <span className="num">04</span>
-          <h3>Verify</h3>
-          <p>Approved work becomes a devnet proof. Anyone can verify it, and opportunities check eligibility against it.</p>
-        </div>
+      <div className="loop">
+        {LOOP.map(([title, text], i) => (
+          <div key={title}>
+            <span className="num">{String(i + 1).padStart(2, "0")}</span>
+            <h3>{title}</h3>
+            <p>{text}</p>
+          </div>
+        ))}
       </div>
+
+      <div className="stats">
+        <div><strong>Per person</strong><span>Each contributor is reviewed on their own evidence. No automatic team awards.</span></div>
+        <div><strong>Reviewed</strong><span>An authorized issuer approves every Proof of Build.</span></div>
+        <div><strong>Portable</strong><span>Issued on Solana, so anyone can check it without trusting FORGE.</span></div>
+      </div>
+
+      <p className="trust-note" style={{ marginTop: 32 }}>
+        How trust works: GitHub sign-in proves you control an account, and commits are evidence. The event organizer
+        judges whether the evidence supports your contribution. Solana stores the credential they issue so anyone can
+        verify it later.
+      </p>
 
       <div className="cta">
         <h2>Show what you shipped, not just where you were.</h2>
-        <Link className="button arrow" href="/events">Browse events</Link>
+        <Link className="button arrow" href="/discover">Find your next build</Link>
       </div>
-      {admin && (
-        <>
-          <h2>Configuration <span className="muted" style={{ fontSize: "0.8rem" }}>(visible to admins only)</span></h2>
-          <div className="card table-wrap">
-            <table>
-              <tbody>
-                {config.map((c) => (
-                  <tr key={c.name}>
-                    <td>{c.name}</td>
-                    <td><span className={`badge ${c.ok ? "ok" : "bad"}`}>{c.ok ? "ready" : "missing"}</span></td>
-                    <td className="muted">{c.detail}</td>
-                  </tr>
-                ))}
-                {health && (
-                  <tr>
-                    <td>Issuer readiness</td>
-                    <td><span className={`badge ${health.problems.length ? "bad" : "ok"}`}>{health.problems.length ? "action needed" : "ready"}</span></td>
-                    <td className="muted">
-                      {health.balanceSol} SOL · credential {health.credentialExists ? "✓" : "missing"} · schema {health.schemaExists ? "✓" : "missing"}
-                      {health.problems.map((p) => <div key={p}>{p}</div>)}
-                    </td>
-                  </tr>
-                )}
-                {healthError && (
-                  <tr><td>Issuer readiness</td><td><span className="badge bad">unknown</span></td><td className="muted">{healthError}</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
     </>
   );
 }

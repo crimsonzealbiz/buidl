@@ -9,7 +9,8 @@ import { getContribution, getSubmission, listConfirmations, listEvidence, sugges
 import { reviewHistory } from "@/lib/domain/reviews";
 import { proofForContribution } from "@/lib/proof/service";
 import { activeWallet } from "@/lib/wallet/link";
-import { Flash, Status, fmt, type PageSearch } from "@/components/ui";
+import { Flash, Status, fmt, role, type PageSearch } from "@/components/ui";
+import { contributionStage, type ProofStatus } from "@/lib/domain/lifecycle";
 import { getSession, makeCtx } from "@/server/session";
 import {
   addEvidenceAction,
@@ -48,6 +49,7 @@ export default async function ContributionPage({ params, searchParams }: Props) 
   if (!canSee) notFound();
   const editable = isOwner && (c.status === "draft" || c.status === "changes_requested");
   const ownerWallet = await activeWallet(db, c.userId);
+  const stage = contributionStage(c.status, proof?.status as ProofStatus | undefined);
   const hidden = (name: string, value: string) => <input type="hidden" name={name} value={value} />;
   let suggestions: CommitSuggestion[] | null = null;
   let suggestionsError: string | null = null;
@@ -62,11 +64,19 @@ export default async function ContributionPage({ params, searchParams }: Props) 
   return (
     <>
       <Flash searchParams={sp} />
-      <p className="muted"><Link href={`/events/${event.slug}`}>{event.name}</Link> · {submission.productName} · team {team.name}</p>
-      <h1>{c.title}</h1>
-      <p>
-        <Status value={c.status} /> <span className="muted">by @{owner.githubLogin} · {c.category}</span>
-      </p>
+      <div className="page-head">
+        <div>
+          <div className="kicker">
+            <Link href={`/events/${event.slug}`}>{event.name}</Link> · <Link href={`/builds/${team.id}`}>{submission.productName}</Link> · Team {team.name}
+          </div>
+          <h1>{c.title}</h1>
+          <p className="muted" style={{ margin: 0 }}>
+            Contribution by <Link href={`/u/${owner.githubLogin}`}>@{owner.githubLogin}</Link> · {role(c.category)}
+            {owner.demo && <span className="signal demo" style={{ marginLeft: 8 }}>Demo identity</span>}
+          </p>
+        </div>
+        <Status value={stage} />
+      </div>
       <p style={{ whiteSpace: "pre-wrap" }}>{c.description}</p>
 
       <h2>Evidence</h2>
@@ -127,7 +137,7 @@ export default async function ContributionPage({ params, searchParams }: Props) 
           </form>
           <form action={submitContributionAction}>
             {hidden("contributionId", c.id)}
-            <button type="submit" disabled={evidence.length === 0}>Submit for review</button>
+            <button type="submit" disabled={evidence.length === 0}>Submit contribution for review</button>
           </form>
         </>
       )}
@@ -153,8 +163,8 @@ export default async function ContributionPage({ params, searchParams }: Props) 
         </form>
       )}
 
-      <h2>Review</h2>
-      {reviews.length === 0 && <p className="muted">Not reviewed yet.</p>}
+      <h2>Issuer review</h2>
+      {reviews.length === 0 && <p className="muted">Not reviewed yet. The event organizers review each contributor&apos;s evidence individually.</p>}
       {reviews.map(({ review: r, reviewer }) => (
         <div key={r.id} className="card">
           <Status value={r.decision} /> <span className="muted">by @{reviewer.githubLogin}, {fmt(r.createdAt)}</span>
@@ -165,24 +175,29 @@ export default async function ContributionPage({ params, searchParams }: Props) 
 
       {c.status === "approved" && (
         <>
-          <h2>Onchain proof</h2>
-          {proof ? (
+          <h2>Proof of Build</h2>
+          {proof?.status === "confirmed" ? (
+            <div className="card row" style={{ justifyContent: "space-between" }}>
+              <span><Status value="proof_issued" /> <span className="muted">Issued {fmt(proof.confirmedAt)}</span></span>
+              <Link className="button arrow" href={`/proofs/${proof.id}`}>View Proof of Build</Link>
+            </div>
+          ) : proof ? (
             <div className="card">
               <Status value={proof.status} /> <Link className="mono" href={`/proofs/${proof.id}`}>{proof.attestationAddress}</Link>
               {proof.error && <pre>{proof.error}</pre>}
             </div>
           ) : (
-            <p className="muted">Not issued yet.</p>
+            <p className="muted">Approved. The Proof of Build has not been issued yet.</p>
           )}
           {(isOwner || isStaff) && proof?.status !== "confirmed" && proof?.status !== "revoked" && (
             <form action={issueProofAction} className="card">
               {hidden("contributionId", c.id)}
               {ownerWallet ? (
-                <p>Issues a Solana Attestation Service proof on devnet to <span className="mono">{ownerWallet.address}</span>.</p>
+                <p>Issues @{owner.githubLogin}&apos;s Proof of Build as a Solana attestation to <span className="mono">{ownerWallet.address}</span>.</p>
               ) : (
                 <p className="flash warn">@{owner.githubLogin} must link a wallet before the proof can be issued.</p>
               )}
-              <button type="submit" disabled={!ownerWallet}>{proof ? "Retry issuance" : "Issue proof"}</button>
+              <button type="submit" disabled={!ownerWallet}>{proof ? "Retry issuance" : "Issue Proof of Build"}</button>
             </form>
           )}
         </>

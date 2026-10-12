@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { listEvents } from "@/lib/domain/events";
 import { isPlatformAdmin } from "@/lib/domain/context";
-import { Flash, fmt, type PageSearch } from "@/components/ui";
+import { Flash, Status, fmtDate, type PageSearch } from "@/components/ui";
+import { eventPhase } from "@/lib/domain/lifecycle";
 import { getSession, makeCtx } from "@/server/session";
 import { createEventAction, createSampleEventAction } from "./actions";
 import { EventFields } from "@/components/event-form";
@@ -14,15 +15,23 @@ export default async function EventsPage({ searchParams }: { searchParams: PageS
   return (
     <>
       <Flash searchParams={sp} />
-      <h1>Events</h1>
-      {all.length === 0 && <p className="muted">No events yet.</p>}
+      <div className="page-head">
+        <div>
+          <div className="kicker"><Link href="/discover">Discover</Link> · Events</div>
+          <h1>All events</h1>
+        </div>
+      </div>
+      {all.length === 0 && <div className="empty">No events yet.</div>}
       <div className="grid">
         {all.map((e) => (
-          <Link key={e.id} href={`/events/${e.slug}`} className="card" style={{ textDecoration: "none", color: "inherit" }}>
-            <strong>{e.name}</strong>
-            <div className="muted">{fmt(e.startsAt)} → {fmt(e.endsAt)}</div>
-            <div className="muted">Submissions close {fmt(e.submissionDeadline)}</div>
-            <div className="muted">{e.chain} · teams up to {e.maxTeamSize}{e.prizes.length ? ` · ${e.prizes.length} prize(s)` : ""}</div>
+          <Link key={e.id} href={`/events/${e.slug}`} className="tile">
+            <div className="tile-top">
+              <span className="kicker">{e.chain} ecosystem</span>
+              <Status value={eventPhase(e)} />
+            </div>
+            <h3>{e.name}</h3>
+            <div className="meta">Build window {fmtDate(e.startsAt)} → {fmtDate(e.submissionDeadline)}</div>
+            <div className="meta">Teams up to {e.maxTeamSize}{e.prizes.length ? ` · ${e.prizes.length} prize(s)` : ""}</div>
           </Link>
         ))}
       </div>

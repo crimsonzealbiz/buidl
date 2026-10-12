@@ -1,13 +1,13 @@
 import Link from "next/link";
-import { eq } from "drizzle-orm";
-import { registrations, events } from "@/db/schema";
 import { activeWallet } from "@/lib/wallet/link";
-import { contributionsForUser } from "@/lib/domain/submissions";
-import { proofsForUser } from "@/lib/proof/service";
-import { Flash, Status, fmt, type PageSearch } from "@/components/ui";
 import { isPlatformAdmin } from "@/lib/domain/context";
 import { nextSteps } from "@/lib/domain/next-steps";
+import { configStatus } from "@/lib/config";
+import { loadIssuer } from "@/lib/proof/runtime";
+import { issuerHealth, type IssuerHealth } from "@/lib/proof/issuer";
+import { Facts, Flash, fmt, type PageSearch } from "@/components/ui";
 import { makeCtx, requireSession } from "@/server/session";
+import { createOriginsScenarioAction, createSampleEventAction } from "../events/actions";
 
 export default async function Dashboard({ searchParams }: { searchParams: PageSearch }) {
   const sp = await searchParams;
@@ -15,23 +15,51 @@ export default async function Dashboard({ searchParams }: { searchParams: PageSe
   const { db } = await makeCtx(session);
   const user = session.user;
   const wallet = await activeWallet(db, user.id);
-  const regs = await db
-    .select({ event: events })
-    .from(registrations)
-    .innerJoin(events, eq(events.id, registrations.eventId))
-    .where(eq(registrations.userId, user.id));
-  const contribs = await contributionsForUser(db, user.id);
-  const proofs = await proofsForUser(db, user.id);
-  const eventSlug = new Map(regs.map((r) => [r.event.id, r.event.slug]));
   const steps = await nextSteps(db, user);
+  const admin = isPlatformAdmin(user);
+  const config = admin ? configStatus() : [];
+  let health: IssuerHealth | null = null;
+  let healthError: string | null = null;
+  if (admin) {
+    const loaded = await loadIssuer();
+    if (loaded.issuer) {
+      try {
+        health = await issuerHealth(loaded.issuer.ledger, loaded.issuer.signer.address, loaded.issuer.config);
+      } catch (e) {
+        healthError = `Could not reach the Solana RPC: ${(e as Error).message}`;
+      }
+    }
+  }
 
   return (
     <>
       <Flash searchParams={sp} />
-      <h1>@{user.githubLogin}</h1>
-      <section className="card">
-        <h3 style={{ marginTop: 0 }}>Next steps</h3>
-        {steps.builder.length === 0 && steps.staff.length === 0 && <p className="muted">You&apos;re all caught up.</p>}
+      <div className="page-head">
+        <div>
+          <div className="kicker">Dashboard</div>
+          <h1>@{user.githubLogin}</h1>
+        </div>
+        <Link className="button secondary" href={`/u/${user.githubLogin}`}>View public profile</Link>
+      </div>
+
+      <Facts
+        items={[
+          ["GitHub", `@${user.githubLogin} ✓`],
+          [
+            "Solana wallet",
+            wallet ? (
+              <span key="w"><span className="mono">{wallet.address.slice(0, 10)}…</span> <span className="muted">linked {fmt(wallet.linkedAt)}</span></span>
+            ) : (
+              <Link key="w" href="/wallet">Link a wallet →</Link>
+            ),
+          ],
+          ["Role", admin ? "Platform admin" : "Builder"],
+        ]}
+      />
+
+      <section className="action-panel">
+        <h2>Next steps</h2>
+        {steps.builder.length === 0 && steps.staff.length === 0 && <p>You&apos;re all caught up.</p>}
         <ol className="steps">
           {steps.builder.map((st, i) => (
             <li key={i}>
@@ -42,7 +70,7 @@ export default async function Dashboard({ searchParams }: { searchParams: PageSe
         </ol>
         {steps.staff.length > 0 && (
           <>
-            <h3>Staff</h3>
+            <h3>As organizer or reviewer</h3>
             <ul>
               {steps.staff.map((st, i) => (
                 <li key={i}>
@@ -54,77 +82,55 @@ export default async function Dashboard({ searchParams }: { searchParams: PageSe
           </>
         )}
       </section>
-      <div className="grid">
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>GitHub identity</h3>
-          <div>{user.name ?? user.githubLogin}</div>
-          <div className="muted">GitHub id {user.githubId}{isPlatformAdmin(user) ? " · platform admin" : ""}</div>
-        </div>
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Solana wallet</h3>
-          {wallet ? (
-            <>
-              <div className="mono">{wallet.address}</div>
-              <div className="muted">Linked {fmt(wallet.linkedAt)} via signed message</div>
-            </>
-          ) : (
-            <>
-              <p className="muted">No wallet linked. Proofs are issued to your linked wallet.</p>
-              <Link className="button" href="/wallet">Link a wallet</Link>
-            </>
-          )}
-        </div>
-      </div>
 
-      <h2>Events</h2>
-      {regs.length === 0 ? (
-        <p className="muted">Not registered for any event. <Link href="/events">Browse events</Link>.</p>
-      ) : (
-        <ul>{regs.map((r) => <li key={r.event.id}><Link href={`/events/${r.event.slug}`}>{r.event.name}</Link></li>)}</ul>
-      )}
+      {admin && (
+        <>
+          <h2>Demo tools</h2>
+          <div className="split">
+            <form action={createOriginsScenarioAction} className="card">
+              <h3 style={{ marginTop: 0 }}>Proof of Build demo</h3>
+              <p className="muted">
+                Creates the live <strong>Origins Hackathon</strong> with you as organizer and issuer, team FORGE (Rikuuen,
+                Dwayne, Arkkk as labelled demo identities) with submitted contributions and evidence, and three
+                opportunities. Review, Solana issuance, verification and eligibility then run for real.
+              </p>
+              <button type="submit">Load demo scenario</button>
+            </form>
+            <form action={createSampleEventAction} className="card">
+              <h3 style={{ marginTop: 0 }}>Empty sample event</h3>
+              <p className="muted">An open event with prizes and a demo-day opportunity, for a demo with real participants.</p>
+              <button type="submit" className="secondary">Create sample event</button>
+            </form>
+          </div>
 
-      <h2>Your contributions</h2>
-      {contribs.length === 0 ? (
-        <p className="muted">None yet.</p>
-      ) : (
-        <div className="card table-wrap">
-          <table>
-            <thead><tr><th>Contribution</th><th>Product</th><th>Category</th><th>Status</th></tr></thead>
-            <tbody>
-              {contribs.map(({ contribution: c, submission: s }) => (
-                <tr key={c.id}>
-                  <td><Link href={`/contributions/${c.id}`}>{c.title}</Link></td>
-                  <td>
-                    {s.productName}
-                    {eventSlug.get(s.eventId) && <span className="muted"> · {eventSlug.get(s.eventId)}</span>}
-                  </td>
-                  <td>{c.category}</td>
-                  <td><Status value={c.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <h2>Your proofs</h2>
-      {proofs.length === 0 ? (
-        <p className="muted">No proofs yet. A proof is issued only after a reviewer approves your individual contribution.</p>
-      ) : (
-        <div className="card table-wrap">
-          <table>
-            <thead><tr><th>Attestation</th><th>Category</th><th>Status</th></tr></thead>
-            <tbody>
-              {proofs.map((p) => (
-                <tr key={p.id}>
-                  <td><Link className="mono" href={`/proofs/${p.id}`}>{p.attestationAddress}</Link></td>
-                  <td>{String((p.onchainData as { category?: string }).category ?? "")}</td>
-                  <td><Status value={p.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          <h2>Configuration <span className="muted" style={{ fontSize: "0.8rem" }}>(admins only)</span></h2>
+          <div className="card table-wrap">
+            <table>
+              <tbody>
+                {config.map((c) => (
+                  <tr key={c.name}>
+                    <td>{c.name}</td>
+                    <td><span className={`badge ${c.ok ? "ok" : "bad"}`}>{c.ok ? "ready" : "missing"}</span></td>
+                    <td className="muted">{c.detail}</td>
+                  </tr>
+                ))}
+                {health && (
+                  <tr>
+                    <td>Issuer readiness</td>
+                    <td><span className={`badge ${health.problems.length ? "bad" : "ok"}`}>{health.problems.length ? "action needed" : "ready"}</span></td>
+                    <td className="muted">
+                      {health.balanceSol} SOL · credential {health.credentialExists ? "✓" : "missing"} · schema {health.schemaExists ? "✓" : "missing"}
+                      {health.problems.map((p) => <div key={p}>{p}</div>)}
+                    </td>
+                  </tr>
+                )}
+                {healthError && (
+                  <tr><td>Issuer readiness</td><td><span className="badge bad">unknown</span></td><td className="muted">{healthError}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </>
   );
