@@ -22,13 +22,18 @@ import { MAINNET_GENESIS_HASH } from "@/lib/solana/ledger";
 import type { User } from "@/lib/auth/session";
 import { fixtureUser, testDb, testWallet } from "./helpers";
 import { GithubStub, type StubRepo } from "./github-stub";
-import { LiteSvmLedger } from "./litesvm-ledger";
 import { makeTestLedger, testLedgerKinds } from "./ledgers";
 import type { Ledger } from "@/lib/solana/ledger";
 
 const cfg: IssuerConfig = { credentialName: "buidl-identity", schemaName: "buidl-contribution", schemaVersion: 1 };
 
-describe.each(testLedgerKinds())("core flow on %s: GitHub identity → wallet → event → contribution → review → SAS proof → verify → opportunity", (ledgerKind) => {
+const kinds = testLedgerKinds();
+// LiteSVM has no Windows build: without a ledger this suite is reported as skipped, not passed.
+if (kinds.length === 0) describe.skip("core flow (no Solana ledger available on this platform)", () => {
+  it("needs Linux/macOS (LiteSVM) or LOCALNET_RPC_URL", () => {});
+});
+
+describe.each(kinds)("core flow on %s: GitHub identity → wallet → event → contribution → review → SAS proof → verify → opportunity", (ledgerKind) => {
   let db: Db;
   let ctx: Ctx;
   let gh: GithubStub;
@@ -425,6 +430,7 @@ describe.each(testLedgerKinds())("core flow on %s: GitHub identity → wallet �
     expect((await listApplications(db, opp.id)).map((a) => a.user.githubLogin)).toEqual(["bob"]);
 
     // If the attestation disappears onchain, eligibility is lost even though the DB still says confirmed.
+    const { LiteSvmLedger } = await import("./litesvm-ledger");
     const ledger2 = new LiteSvmLedger(); // a cluster without the proofs
     const fresh = await checkEligibility(ctx, ledger2, trust, u.bob, opp);
     expect(fresh.eligible).toBe(false);

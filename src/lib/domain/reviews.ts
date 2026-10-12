@@ -33,9 +33,9 @@ export async function reviewContribution(
   const c = await getContribution(ctx.db, contributionId);
   const submission = await getSubmission(ctx.db, c.submissionId);
   assert(
-    await hasStaffRole(ctx.db, submission.eventId, actor.id, "reviewer"),
+    await canReview(ctx.db, submission.eventId, actor.id),
     "forbidden",
-    "Only reviewers for this event can review contributions",
+    "Only this event's organizers or reviewers can review contributions",
   );
   assert(c.userId !== actor.id, "forbidden", "You cannot review your own contribution");
   assert(
@@ -88,9 +88,17 @@ export function reviewHistory(db: Db, contributionId: string) {
     .orderBy(desc(reviews.createdAt));
 }
 
+/**
+ * Organizers issue their event's proofs, so they judge contributions as well
+ * as any reviewers they appoint.
+ */
+export async function canReview(db: Db, eventId: string, userId: string) {
+  return (await hasStaffRole(db, eventId, userId, "reviewer")) || (await hasStaffRole(db, eventId, userId, "organizer"));
+}
+
 /** Contributions awaiting review for an event, excluding the reviewer's own team. */
 export async function reviewQueue(ctx: Ctx, actor: User, eventId: string) {
-  assert(await hasStaffRole(ctx.db, eventId, actor.id, "reviewer"), "forbidden", "You are not a reviewer for this event");
+  assert(await canReview(ctx.db, eventId, actor.id), "forbidden", "You are not a reviewer for this event");
   const rows = await ctx.db
     .select({ contribution: contributions, submission: submissions, team: teams, user: users })
     .from(contributions)

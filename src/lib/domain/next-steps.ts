@@ -87,25 +87,25 @@ export async function nextSteps(db: Db, user: User, now = new Date()): Promise<{
     .from(eventStaff)
     .innerJoin(events, eq(events.id, eventStaff.eventId))
     .where(eq(eventStaff.userId, user.id));
-  for (const { role, event } of roles) {
-    if (role === "reviewer") {
-      let pending = 0;
-      for (const t of await listTeams(db, event.id)) {
-        const sub = await submissionForTeam(db, t.id);
-        if (!sub) continue;
-        // Own team's claims are excluded from the queue (conflict of interest).
-        if (await isTeamMember(db, t.id, user.id)) continue;
-        const rows = await listContributions(db, sub.id);
-        pending += rows.filter((r) => r.contribution.status === "submitted").length;
-      }
-      staff.push({
-        label: `Review queue for ${event.name}`,
-        href: `/events/${event.slug}/review`,
-        detail: pending ? `${pending} awaiting review` : "Nothing waiting",
-      });
-    } else {
-      staff.push({ label: `Manage ${event.name}`, href: `/events/${event.slug}`, detail: "Organizer" });
+  // Organizers and reviewers both review; list each event's queue once.
+  const seen = new Set<string>();
+  for (const { event } of roles) {
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+    let pending = 0;
+    for (const t of await listTeams(db, event.id)) {
+      const sub = await submissionForTeam(db, t.id);
+      if (!sub) continue;
+      // Own team's claims are excluded from the queue (conflict of interest).
+      if (await isTeamMember(db, t.id, user.id)) continue;
+      const rows = await listContributions(db, sub.id);
+      pending += rows.filter((r) => r.contribution.status === "submitted").length;
     }
+    staff.push({
+      label: `Review contributions for ${event.name}`,
+      href: `/events/${event.slug}/review`,
+      detail: pending ? `${pending} awaiting review` : "Nothing waiting",
+    });
   }
   return { builder, staff };
 }

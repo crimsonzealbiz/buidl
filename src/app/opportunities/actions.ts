@@ -1,6 +1,7 @@
 "use server";
 
-import { CONTRIBUTION_CATEGORIES } from "@/db/schema";
+import { CONTRIBUTION_CATEGORIES, OPPORTUNITY_KINDS } from "@/db/schema";
+import type { EVENT_CHAINS } from "@/lib/domain/events";
 import { applyToOpportunity, createOpportunity } from "@/lib/domain/opportunities";
 import { loadTrustAnchor, readLedger } from "@/lib/proof/runtime";
 import { AppError } from "@/lib/errors";
@@ -13,9 +14,11 @@ export async function createOpportunityAction(form: FormData) {
   return act("/opportunities", async () => {
     await createOpportunity(ctx, session.user, {
       title: str(form, "title"),
+      kind: (str(form, "kind") || "hackathon") as (typeof OPPORTUNITY_KINDS)[number],
       description: str(form, "description"),
       eventId: str(form, "eventId") || null,
       categories: form.getAll("categories").map(String) as (typeof CONTRIBUTION_CATEGORIES)[number][],
+      ecosystems: form.getAll("ecosystems").map(String) as (typeof EVENT_CHAINS)[number][],
       minProofs: str(form, "minProofs") || "1",
     });
     return "Opportunity created";

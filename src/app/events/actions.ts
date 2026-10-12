@@ -12,7 +12,7 @@ import {
   submitContribution,
 } from "@/lib/domain/submissions";
 import { reviewContribution } from "@/lib/domain/reviews";
-import { createSampleEvent } from "@/lib/domain/demo";
+import { createOriginsScenario, createSampleEvent } from "@/lib/domain/demo";
 import { getProof, issueProof, revokeProof } from "@/lib/proof/service";
 import { loadIssuer } from "@/lib/proof/runtime";
 import { AppError } from "@/lib/errors";
@@ -86,6 +86,19 @@ export async function createSampleEventAction() {
     });
   }
   return act(`/events/${slug}`, async () => "Sample event and demo-day opportunity created");
+}
+
+export async function createOriginsScenarioAction() {
+  const { ctx, user } = await ctxAndUser();
+  let slug = "";
+  try {
+    slug = (await createOriginsScenario(ctx, user)).event.slug;
+  } catch (e) {
+    return act("/dashboard", async () => {
+      throw e;
+    });
+  }
+  return act(`/events/${slug}`, async () => "Demo scenario loaded: Origins Hackathon with team FORGE, ready for review");
 }
 
 export async function createEventAction(form: FormData) {
@@ -232,13 +245,14 @@ export async function reviewAction(form: FormData) {
 export async function issueProofAction(form: FormData) {
   const { ctx, user } = await ctxAndUser();
   const id = str(form, "contributionId");
-  return act(`/contributions/${id}`, async () => {
+  const back = str(form, "back");
+  return act(back.startsWith("/") && !back.startsWith("//") ? back : `/contributions/${id}`, async () => {
     const loaded = await loadIssuer();
     if (!loaded.issuer) throw new AppError("not_configured", loaded.reason);
     const proof = await issueProof(ctx, loaded.issuer, user, id).catch((e) => {
       if (e instanceof AppError) throw e;
       throw new AppError("upstream_failed", `Could not reach the Solana cluster: ${(e as Error).message}`);
     });
-    return proof.status === "confirmed" ? "Proof confirmed onchain" : `Proof status: ${proof.status}`;
+    return proof.status === "confirmed" ? "Proof of Build issued and verified on Solana" : `Proof status: ${proof.status}`;
   });
 }
