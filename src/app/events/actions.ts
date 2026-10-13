@@ -16,7 +16,7 @@ import { createOriginsScenario, createSampleEvent } from "@/lib/domain/demo";
 import { getProof, issueProof, revokeProof } from "@/lib/proof/service";
 import { loadIssuer } from "@/lib/proof/runtime";
 import { AppError } from "@/lib/errors";
-import { act, str } from "@/server/actions";
+import { act, localPath, str } from "@/server/actions";
 import { makeCtx, requireSession } from "@/server/session";
 
 async function ctxAndUser() {
@@ -169,7 +169,7 @@ export async function saveContributionAction(form: FormData) {
   const { ctx, user } = await ctxAndUser();
   const category = str(form, "category") as (typeof CONTRIBUTION_CATEGORIES)[number];
   let id = "";
-  const back = str(form, "back") || "/dashboard";
+  const back = localPath(str(form, "back"), "/dashboard");
   try {
     id = (
       await saveContribution(ctx, user, str(form, "submissionId"), {
@@ -245,8 +245,8 @@ export async function reviewAction(form: FormData) {
 export async function issueProofAction(form: FormData) {
   const { ctx, user } = await ctxAndUser();
   const id = str(form, "contributionId");
-  const back = str(form, "back");
-  return act(back.startsWith("/") && !back.startsWith("//") ? back : `/contributions/${id}`, async () => {
+  const back = localPath(str(form, "back"), `/contributions/${id}`);
+  return act(back, async () => {
     const loaded = await loadIssuer();
     if (!loaded.issuer) throw new AppError("not_configured", loaded.reason);
     const proof = await issueProof(ctx, loaded.issuer, user, id).catch((e) => {

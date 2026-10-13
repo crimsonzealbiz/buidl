@@ -30,6 +30,15 @@ export async function act(path: string, fn: () => Promise<string | void>): Promi
   redirect(target);
 }
 
+/**
+ * A same-origin path from untrusted input, or the fallback. Rejects
+ * protocol-relative ("//host") and backslash ("/\host") forms, which browsers
+ * resolve to another origin.
+ */
+export function localPath(value: string, fallback: string): string {
+  return /^\/(?![/\\])/.test(value) && !/[\\\s]/.test(value) ? value : fallback;
+}
+
 export function str(form: FormData, key: string): string {
   const v = form.get(key);
   return typeof v === "string" ? v : "";
